@@ -38,8 +38,9 @@ jobs:
         shell: bash
         run: |
           bash scripts/build-host-sidecar.sh x86_64-pc-windows-msvc
-          echo "=== git status after sidecar ==="
-          git status --short | head -40
+          # pnpm install modifica pnpm-lock.yaml (input del sidecar -> staleness)
+          git checkout -- pnpm-lock.yaml
+          git status --short | head -20
 
       - name: Build engine (tilinx-app)
         run: cargo build --release -p tilinx-app
