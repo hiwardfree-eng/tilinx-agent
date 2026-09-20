@@ -1,0 +1,40 @@
+name: build-tilinx-windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Setup Node + pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install deps (UI)
+        run: pnpm install --frozen-lockfile=false
+
+      - name: Build UI
+        run: pnpm build
+
+      - name: Build engine (tilinx-app)
+        run: cargo build --release -p tilinx-app
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: tilinx-app-windows
+          path: target/release/tilinx-app.exe

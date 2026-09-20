@@ -1,0 +1,225 @@
+import {
+  InlineTextRow,
+  InteractionModal,
+  InteractionModalTitle,
+  type StepChrome,
+} from "@tilinx-ai/chat";
+import { Button } from "@tilinx-ai/core";
+import { Check, CornerDownLeft, Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import { ChatStepDeclineButton } from "./chat-step-decline-button";
+import { AppLogo } from "./integrations";
+import { CuratedConnectDialog } from "./integrations/curated-connect-dialog";
+import { useChatConnect } from "./use-chat-connect";
+import { useInteractionStepKeys } from "./use-interaction-step-keys";
+
+interface ChatConnectInteractionCardProps extends StepChrome {
+  /** The connect step's stable id — fades the modal body on a step swap. */
+  stepId: string;
+  /** The `#tilinx_toolkit=<slug>` app the agent asked the user to connect. */
+  toolkit: string;
+  /** The agent whose chat hosts the card. */
+  agentId: string;
+  /** The reason the agent gave for needing this app, rendered as the body's
+   *  foreground "why" line beneath the identity row. When absent, it falls back
+   *  to a generic "Connect {app} to continue." line. */
+  reason?: string;
+  /** Fired once when the connection the user drove from here lands — the panel
+   *  nudges the agent to resume (reuses the auto-continue path). */
+  onConnected: (toolkit: string, appName: string) => void;
+  /** Fired when the user declines this connect step: "Not now" (live frontier
+   *  only) passes no `message`; typing an instruction into the free-text row and
+   *  sending passes that verbatim text. The panel records the decline (with the
+   *  message, if any, so the composed reply relays it) then advances. */
+  onSkip: (toolkit: string, appName: string, message?: string) => void;
+  /** True when the user walked BACK onto this already-reached step via the pager.
+   *  A revisited step that is already connected shows the calm connected state
+   *  with no footer (the pager's forward chevron is the way onward); a revisited
+   *  step that was SKIPPED keeps its Connect CTA so the user can reconsider. */
+  revisited: boolean;
+}
+
+/**
+ * The connect-step content for a `request_connection` interaction, rendered as
+ * its OWN `InteractionModal` inside the shared `ChatInteractionCard` sequence
+ * (via its `renderConnect` prop, wired with the `StepChrome` the stepper hands
+ * it — the header pager + dismiss X). Following the reference "Coworker card"
+ * language, the modal TITLE is the app's real brand logo beside the explicit
+ * action, "Connect Google Sheets", at regular weight. The body carries the
+ * agent's REASON ("To create the spreadsheet in your Drive.") in foreground
+ * tone. A right-aligned footer carries the
+ * unified quiet "Not now" + Esc hint beside the single filled "Connect" pill
+ * (with a return-key glyph).
+ *
+ * Enter connects, Esc declines (matching the footer hints), both ignored while
+ * focus sits in a text field so the real composer is unaffected. The header
+ * pager owns Back/Forward, so a REVISITED step needs no navigation button of its
+ * own: already connected -> the calm "Connected" state and no footer; skipped ->
+ * the Connect CTA (and its paired "Not now") return so the user can reconsider
+ * and connect after all. "Not now" travels WITH the Connect CTA so the decline
+ * affordance is present wherever connecting is offered — never a dead-end step
+ * with only a Connect button.
+ *
+ * While the OAuth hand-off is in flight the pill shows the connecting state and
+ * a quiet line reminds the user the browser is waiting. On the live frontier an
+ * already-connected toolkit self-reports through `onConnected` (see {@link
+ * useIntegrationConnect}) so the sequence never soft-locks.
+ */
+export function ChatConnectInteractionCard({
+  toolkit,
+  agentId,
+  reason,
+  onConnected,
+  onSkip,
+  revisited,
+  stepId,
+  pager,
+  onDismiss,
+  dismissLabel,
+  collapseLabel,
+  expandLabel,
+  disabled,
+  open,
+  onOpenChange,
+}: ChatConnectInteractionCardProps) {
+  const { t } = useTranslation("chat");
+  // Auto-continue only on the LIVE frontier: a revisited completed step mounts a
+  // fresh card whose already-connected self-report would otherwise re-fire,
+  // bouncing the user off the step they walked Back to. On a revisit the pager's
+  // forward chevron is the way onward.
+  const {
+    app,
+    isConnected,
+    connecting,
+    startConnect,
+    curatedDialog,
+    curatedProviderConnect,
+    closeCuratedDialog,
+  } = useChatConnect({
+    toolkit,
+    agentId,
+    onConnected,
+    autoContinueWhenConnected: !revisited,
+  });
+
+  // The title names the required action; the agent's reason explains why.
+  const reasonLine =
+    reason ?? t("interaction.connectReasonFallback", { app: app.name });
+
+  // The CTA shows whenever the app isn't connected (frontier OR a reconsidered
+  // skip). "Not now" travels WITH the CTA: the decline affordance is present
+  // wherever connecting is offered, so a revisited/reconsidered step is never a
+  // dead end with only a Connect button.
+  const showConnect = !isConnected;
+  const showNotNow = showConnect;
+
+  // Enter connects (only when the CTA is offered), Esc declines (only when "Not
+  // now" is offered) — mirroring the footer hints. Inert while a connect is in
+  // flight; the shared hook owns the editable-target guard + capture-phase
+  // pre-emption of the global Escape-closes-the-panel shortcut.
+  useInteractionStepKeys({
+    enabled: open && !connecting,
+    onEnter: showConnect ? () => void startConnect() : undefined,
+    onEscape: showNotNow ? () => onSkip(toolkit, app.name) : undefined,
+  });
+
+  const connectButton = (
+    <Button
+      className="gap-1.5"
+      disabled={connecting}
+      onClick={() => void startConnect()}
+      size="sm"
+      type="button"
+    >
+      {connecting ? (
+        <>
+          <Loader2 className="size-3.5 animate-spin" />
+          {t("composio.connecting")}
+        </>
+      ) : (
+        <>
+          {t("composio.connect")}
+          <CornerDownLeft className="size-3.5 opacity-70" />
+        </>
+      )}
+    </Button>
+  );
+
+  return (
+    <>
+      {/* A curated toolkit's Connect opens the options dialog (provider
+          connect / MCP sign-in / API key) instead of the generic hand-off. */}
+      <CuratedConnectDialog
+        agentId={agentId}
+        curated={curatedDialog}
+        providerConnect={curatedProviderConnect}
+        onClose={closeCuratedDialog}
+      />
+      <InteractionModal
+        contentKey={stepId}
+        collapseLabel={collapseLabel}
+        collapsedHint={reasonLine}
+        disabled={disabled}
+        dismissLabel={dismissLabel}
+        expandLabel={expandLabel}
+        onDismiss={onDismiss}
+        onOpenChange={onOpenChange}
+        open={open}
+        pager={pager}
+        // Title: the app icon beside the required connect action.
+        title={
+          <InteractionModalTitle
+            className="flex-1 truncate"
+            icon={<AppLogo className="shrink-0" display={app} size="sm" />}
+          >
+            {t("interaction.connectTitle", { app: app.name })}
+          </InteractionModalTitle>
+        }
+        body={
+          <>
+            {isConnected ? (
+              <span className="inline-flex items-center gap-1 font-medium text-emerald-600 text-sm dark:text-emerald-400">
+                <Check className="size-3.5" />
+                {t("composio.connected")}
+              </span>
+            ) : (
+              <p className="text-balance text-ink text-sm leading-snug">
+                {reasonLine}
+              </p>
+            )}
+            {connecting && (
+              <p className="mt-1.5 text-ink-muted text-xs">
+                {t("composio.waitingToConnect")}
+              </p>
+            )}
+          </>
+        }
+        footer={
+          showConnect ? (
+            <>
+              {showNotNow && (
+                <ChatStepDeclineButton
+                  disabled={connecting}
+                  escLabel={t("interaction.esc")}
+                  label={t("interaction.skip")}
+                  onClick={() => onSkip(toolkit, app.name)}
+                />
+              )}
+              {connectButton}
+            </>
+          ) : undefined
+        }
+        trailing={
+          showConnect ? (
+            <InlineTextRow
+              disabled={connecting}
+              onSubmit={(text) => onSkip(toolkit, app.name, text)}
+              placeholder={t("interaction.declinePlaceholder")}
+              sendLabel={t("questionCard.send")}
+            />
+          ) : undefined
+        }
+      />
+    </>
+  );
+}

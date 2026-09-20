@@ -1,0 +1,248 @@
+import type { KanbanColumnConfig, KanbanItem } from "@tilinx-ai/board";
+import { useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import { fireMissionDoneConfetti } from "../../lib/confetti";
+import { logAndReportError } from "../../lib/error-report";
+import {
+  celebratesMissionDone,
+  DONE_STATUS,
+  moveTargetsForSection,
+} from "../../lib/mission-selection";
+import { useUIStore } from "../../stores/ui";
+import type { BoardSelectionModel } from "./board-source";
+import { ColumnActionsMenu } from "./column-actions-menu";
+
+// Sentinel lock used when a selection no longer maps to exactly one board
+// section (a live status change split it, or it spans sections). It matches no
+// real column id, so every column keeps its checkbox hidden until the user
+// clears — recovering from a cross-section selection.
+const LOCKED_SECTION_SENTINEL = " mixed-section";
+
+/**
+ * Derives the multi-select UI from a {@link BoardSelectionModel}: the section
+ * lock, the toggle guard (so a selection can never span sections), the kebab
+ * column-header "Select all in column" menus (Done + Needs you), and the
+ * floating bulk-action-bar config. Identical for the per-agent board and
+ * cross-agent Mission Control — only the model's bulk dispatch differs.
+ *
+ * Per-column ids are read from `allItems` (the unsearched active set) so
+ * "Select all in column" grabs the whole section regardless of the current
+ * search.
+ */
+export function useBoardSelectionUI({
+  baseColumns,
+  allItems,
+  selection,
+  openChatId,
+  onCloseOpenChat,
+}: {
+  baseColumns: KanbanColumnConfig[];
+  allItems: KanbanItem[];
+  selection?: BoardSelectionModel;
+  /**
+   * Id of the mission whose chat panel is open. A bulk archive/delete that
+   * covers it also closes the panel via `onCloseOpenChat` — the panel stays
+   * open across ANY other item churn (its visibility keys off the selection,
+   * see `resolvePanelState` in @tilinx-ai/board), so a removal the user
+   * just ordered must deselect explicitly.
+   */
+  openChatId?: string | null;
+  onCloseOpenChat?: () => void;
+}) {
+  const { t } = useTranslation(["board", "dashboard"]);
+  const addToast = useUIStore((s) => s.addToast);
+
+  const columnOfStatus = useCallback(
+    (status: string) =>
+      baseColumns.find((c) => c.statuses.includes(status))?.id ?? null,
+    [baseColumns],
+  );
+  const idsInColumn = useCallback(
+    (columnId: string) =>
+      allItems
+        .filter((a) => columnOfStatus(a.status) === columnId)
+        .map((a) => a.id),
+    [allItems, columnOfStatus],
+  );
+  const doneIds = useMemo(() => idsInColumn("done"), [idsInColumn]);
+  const needsYouIds = useMemo(() => idsInColumn("needs_you"), [idsInColumn]);
+
+  // Lock derives from the WHOLE selection, not just the first card, so a live
+  // status change can't drop the lock to null and silently reopen cross-section
+  // selection — if it ever spans/loses its section we keep the sentinel.
+  const selectionLockColumnId = useMemo(() => {
+    if (!selection || selection.selectedIds.size === 0) return null;
+    const sections = new Set<string>();
+    for (const a of allItems) {
+      if (!selection.selectedIds.has(a.id)) continue;
+      const col = columnOfStatus(a.status);
+      if (col) sections.add(col);
+    }
+    return sections.size === 1 ? [...sections][0] : LOCKED_SECTION_SENTINEL;
+  }, [selection, allItems, columnOfStatus]);
+
+  const handleToggleSelect = useCallback(
+    (item: KanbanItem) => {
+      if (!selection) return;
+      // Always allow DESELECTING; only block ADDING a card from another section
+      // so the user can never build a cross-section selection.
+      const alreadySelected = selection.selectedIds.has(item.id);
+      if (!alreadySelected && selectionLockColumnId) {
+        if (columnOfStatus(item.status) !== selectionLockColumnId) return;
+      }
+      selection.toggle(item);
+    },
+    [selection, selectionLockColumnId, columnOfStatus],
+  );
+
+  // "Select all in column" clears first so the result is always a clean,
+  // single-section selection of the clicked column — `selectAll` itself
+  // bypasses the per-card cross-section guard, so without the clear it could
+  // otherwise bolt a column onto a selection already locked to another section.
+  const handleSelectAll = useCallback(
+    (ids: string[]) => {
+      if (!selection) return;
+      selection.clear();
+      selection.selectAll(ids);
+    },
+    [selection],
+  );
+
+  const menuLabels = useMemo(
+    () => ({
+      menu: t("board:column.menu"),
+      selectAll: t("board:column.selectAll"),
+    }),
+    [t],
+  );
+
+  const doneHeaderAction =
+    selection && doneIds.length > 0 ? (
+      <ColumnActionsMenu
+        onSelectAll={() => handleSelectAll(doneIds)}
+        labels={menuLabels}
+      />
+    ) : undefined;
+
+  const needsYouHeaderAction =
+    selection && needsYouIds.length > 0 ? (
+      <ColumnActionsMenu
+        onSelectAll={() => handleSelectAll(needsYouIds)}
+        labels={menuLabels}
+      />
+    ) : undefined;
+
+  const columns = useMemo(
+    () =>
+      baseColumns.map((c) =>
+        c.id === "done"
+          ? { ...c, headerAction: doneHeaderAction }
+          : c.id === "needs_you"
+            ? { ...c, headerAction: needsYouHeaderAction }
+            : c,
+      ),
+    [baseColumns, doneHeaderAction, needsYouHeaderAction],
+  );
+
+  /** Run a bulk op, toasting any failure. Resolves `true` only when the op
+   *  actually succeeded, so callers can chain a success-only follow-up (the
+   *  Move-to-Done celebration) without re-catching. */
+  const runBulk = useCallback(
+    async (op: () => Promise<void>) => {
+      try {
+        await op();
+        return true;
+      } catch (err) {
+        logAndReportError("bulk_update_missions", err);
+        addToast({
+          title: t("board:bulk.error"),
+          variant: "error",
+        });
+        return false;
+      }
+    },
+    [addToast, t],
+  );
+
+  // Run a bulk op that removes cards from the board; when the open chat's
+  // mission is among them, deselect it AFTER the op succeeds so its panel
+  // closes with the cards (membership is read before `op` — success clears
+  // the selection set).
+  const runBulkRemoval = useCallback(
+    (op: () => Promise<void>) =>
+      runBulk(async () => {
+        const closesOpenChat =
+          openChatId != null && selection?.selectedIds.has(openChatId);
+        await op();
+        if (closesOpenChat) onCloseOpenChat?.();
+      }),
+    [runBulk, selection, openChatId, onCloseOpenChat],
+  );
+
+  const bulkActions = useMemo(() => {
+    if (!selection) return undefined;
+    return {
+      moveTargets: moveTargetsForSection(selectionLockColumnId).map(
+        (status) => ({
+          status,
+          label:
+            status === DONE_STATUS
+              ? t("dashboard:columns.done")
+              : t("dashboard:columns.needsYou"),
+        }),
+      ),
+      // One celebration for the whole batch, and only once the move landed.
+      // The statuses are read BEFORE the move (a successful bulk move rewrites
+      // them and clears the selection): a Needs you selection can mix settled
+      // and failed missions, so the batch celebrates when at least one of them
+      // succeeded, and a batch of nothing but failures moves in silence.
+      // No card origin here, unlike the single-card paths: a bulk move finishes
+      // many cards at once, so there is no ONE card the burst belongs to — the
+      // batch keeps the default rise from the bottom of the board.
+      onMove: async (status: string) => {
+        const fromStatuses = allItems
+          .filter((a) => selection.selectedIds.has(a.id))
+          .map((a) => a.status);
+        const moved = await runBulk(() => selection.move(status));
+        if (moved && celebratesMissionDone(status, fromStatuses))
+          fireMissionDoneConfetti();
+      },
+      onArchive: () => runBulkRemoval(() => selection.archive()),
+      onDelete: () => runBulkRemoval(() => selection.remove()),
+      onClear: selection.clear,
+      labels: {
+        selected: (count: number) => t("board:bulk.selected", { count }),
+        moveTo: t("board:bulk.moveTo"),
+        archive: t("board:bulk.archive"),
+        delete: t("board:bulk.delete"),
+        clear: t("board:bulk.clear"),
+        cancel: t("board:bulk.cancel"),
+        confirmMoveTitle: t("board:bulk.confirmMove.title"),
+        confirmMoveDescription: (count: number, target: string) =>
+          t("board:bulk.confirmMove.description", { count, target }),
+        confirmMoveAction: t("board:bulk.confirmMove.action"),
+        confirmArchiveTitle: t("board:bulk.confirmArchive.title"),
+        confirmArchiveDescription: (count: number) =>
+          t("board:bulk.confirmArchive.description", { count }),
+        confirmArchiveAction: t("board:bulk.confirmArchive.action"),
+        confirmDeleteTitle: t("board:bulk.confirmDelete.title"),
+        confirmDeleteDescription: (count: number) =>
+          t("board:bulk.confirmDelete.description", { count }),
+        confirmDeleteAction: t("board:bulk.confirmDelete.action"),
+      },
+    };
+  }, [selection, selectionLockColumnId, allItems, runBulk, runBulkRemoval, t]);
+
+  const selectionProps =
+    selection && bulkActions
+      ? {
+          selectable: true as const,
+          selectedIds: selection.selectedIds,
+          onToggleSelect: handleToggleSelect,
+          selectionLockColumnId,
+          bulkActions,
+        }
+      : null;
+
+  return { columns, selectionProps };
+}

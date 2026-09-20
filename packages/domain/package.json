@@ -1,0 +1,73 @@
+{
+  "name": "@tilinx/domain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./agent-name": {
+      "types": "./src/agent-name.ts",
+      "import": "./src/agent-name.ts"
+    },
+    "./provider-dialect": {
+      "types": "./src/provider-dialect.ts",
+      "import": "./src/provider-dialect.ts"
+    },
+    "./model-display-names": {
+      "types": "./src/model-display-names.ts",
+      "import": "./src/model-display-names.ts"
+    },
+    "./provider-default-models": {
+      "types": "./src/provider-default-models.ts",
+      "import": "./src/provider-default-models.ts"
+    },
+    "./model-aliases": {
+      "types": "./src/model-aliases.ts",
+      "import": "./src/model-aliases.ts"
+    },
+    "./agent-color-ids": {
+      "types": "./src/agent-color-ids.ts",
+      "import": "./src/agent-color-ids.ts"
+    },
+    "./assistant-role": {
+      "types": "./src/assistant-role.ts",
+      "import": "./src/assistant-role.ts"
+    },
+    "./assistant-capability-index": {
+      "types": "./src/assistant-capability-index.generated.ts",
+      "import": "./src/assistant-capability-index.generated.ts"
+    },
+    "./assistant-catalog-types": {
+      "types": "./src/assistant-catalog-types.ts",
+      "import": "./src/assistant-catalog-types.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "build": "tsgo -p tsconfig.json",
+    "test": "vitest run --testTimeout=30000",
+    "typecheck": "tsgo -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@tilinx-ai/agent-schemas": "workspace:*",
+    "@tilinx/agentstore-contract": "workspace:*",
+    "@tilinx/protocol": "workspace:*",
+    "croner": "10.0.1",
+    "fflate": "0.8.3",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.0",
+    "@typescript/native-preview": "7.0.0-dev.20260607.1",
+    "typescript": "6.0.3",
+    "vitest": "3.2.6"
+  }
+}

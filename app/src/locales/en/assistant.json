@@ -1,0 +1,10 @@
+{
+  "title": "TilinX",
+  "opening": "Opening TilinX",
+  "back": "Back",
+  "empty": {
+    "heading": "Hi, I'm TilinX",
+    "capabilities": "I can do anything you can do in TilinX: create agents, set up automations, connect your apps, and find what you need.",
+    "safety": "I'll always ask before anything risky."
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "setupMission": {
+    "title": "Getting set up",
+    "kickoff": "Help me get set up",
+    "startFailed": "We could not start setup. Please try again."
+  }
+}

@@ -1,0 +1,234 @@
+/**
+ * The TilinX app tree, composed for the web.
+ *
+ * This mirrors app/src/main.tsx's provider/gate nesting but is web-owned so it
+ * can be lazy-loaded only after the engine config is in place (see root.tsx).
+ * It imports the REAL app components from app/src (via the `@tilinx/app/*`
+ * alias) — no fork. The only platform difference is reached through the Tauri
+ * shims (vite.config.ts), so behavior matches the desktop app except where a
+ * capability genuinely can't exist in a browser.
+ *
+ * Boot order matches the desktop entry:
+ *   QueryClientProvider > ErrorBoundary > TooltipProvider > EngineGate >
+ *   I18nextProvider > LanguageGate > App (sign-in, then the agreement gate)
+ * EXCEPT on the cloud web build (identity configured), where the first-run
+ * language/agreement gates are skipped: sign-in is the first screen, and the
+ * account's stored locale applies after auth (see AppTree below, HOU-1014).
+ */
+
+import { AgentFilePreviewHost } from "@tilinx/app/components/agent-file-preview-host";
+import { LanguageGate } from "@tilinx/app/components/shell/language-gate";
+import { QueryPersistenceProvider } from "@tilinx/app/components/shell/query-persistence-provider";
+import { WorkspaceLoading } from "@tilinx/app/components/shell/workspace-loading";
+import { useLocalePreference } from "@tilinx/app/hooks/use-locale-preference";
+import { useSession } from "@tilinx/app/hooks/use-session";
+import { useUsageAccrual } from "@tilinx/app/hooks/use-usage-accrual";
+import { IdentityKeyedApp } from "@tilinx/app/identity-keyed-app";
+import { analytics, classifyAnalyticsError } from "@tilinx/app/lib/analytics";
+import { isEngineReady, whenEngineReady } from "@tilinx/app/lib/engine";
+import { showErrorToast } from "@tilinx/app/lib/error-toast";
+import { installGlobalErrorHandlers } from "@tilinx/app/lib/global-error-handlers";
+import i18n from "@tilinx/app/lib/i18n";
+import { isIdentityConfigured } from "@tilinx/app/lib/identity";
+import { initFrontendLogging, logger } from "@tilinx/app/lib/logger";
+import { queryClient } from "@tilinx/app/lib/query-client";
+import { initSentry } from "@tilinx/app/lib/sentry";
+import { loadTheme } from "@tilinx/app/lib/theme";
+import { TooltipProvider } from "@tilinx-ai/core";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { Component, type ReactNode, useEffect, useState } from "react";
+import { I18nextProvider } from "react-i18next";
+import { PreviewBadge } from "./preview-badge";
+import "@tilinx/app/styles/globals.css";
+
+// Sentry first so the global handlers below can capture from the first render.
+// Empty DSN (the default web build) → silent no-op.
+initSentry();
+
+// Patches console.error/warn + window handlers. On web the underlying
+// write_frontend_log is a no-op shim, so this is harmless (console only).
+initFrontendLogging();
+
+// Global error handlers — shared with the desktop entry (app/src/main.tsx) so
+// the two trees report identically and can't drift. Swallows benign background
+// noise (Supabase Web Locks steal, HOU-435). Must run AFTER initFrontendLogging()
+// so the console.error → log file patch is already in place.
+installGlobalErrorHandlers();
+
+class ErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+  componentDidCatch(error: Error) {
+    logger.error(`[react-crash] ${error.message}`, error.stack);
+    analytics.captureException(error, {
+      source: "react_crash",
+      error_kind: classifyAnalyticsError(error.message),
+    });
+    showErrorToast("react_crash", error.message, error);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            padding: 32,
+            background: "#1e1e1e",
+            color: "#ffdddd",
+            fontFamily: "ui-monospace, Menlo, monospace",
+            fontSize: 13,
+            whiteSpace: "pre-wrap",
+            overflow: "auto",
+            zIndex: 999999,
+          }}
+        >
+          <h1
+            style={{
+              color: "#ff6666",
+              fontSize: 24,
+              margin: 0,
+              marginBottom: 16,
+            }}
+          >
+            App crashed
+          </h1>
+          <p style={{ fontSize: 15, marginBottom: 16, color: "#ffffff" }}>
+            {this.state.error.message}
+          </p>
+          <pre style={{ fontSize: 12, opacity: 0.85 }}>
+            {this.state.error.stack}
+          </pre>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/**
+ * Blocks render until the engine client is bootstrapped. On web the handshake
+ * is set synchronously (window.__TILINX_ENGINE__) before this chunk loads, so
+ * this resolves on the first tick — but we keep the gate for parity and for the
+ * (defensive) restart-rebuild path in engine.ts.
+ */
+function EngineGate({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(isEngineReady());
+  useEffect(() => {
+    if (ready) return;
+    let cancelled = false;
+    whenEngineReady().then(() => {
+      if (!cancelled) setReady(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [ready]);
+
+  if (!ready) {
+    // Rendered OUTSIDE <I18nextProvider> — WorkspaceLoading reads the i18n
+    // singleton directly, so that's fine.
+    return <WorkspaceLoading />;
+  }
+  return <>{children}</>;
+}
+
+/**
+ * Reconcile the theme with the `theme` preference — the source of truth — once
+ * the handshake lands. Mirrors `StartupEffects` in app/src/main.tsx: the
+ * preference reads through `getEngine()`, which throws before the handshake.
+ * The web tree used to skip this entirely, so a web user's saved theme was
+ * never applied and every reload came back light. The pre-boot mirror in
+ * ./main.tsx has already painted the right surface; this settles the preference
+ * over it and refreshes the mirror. Renders nothing; never blocks.
+ */
+function useEngineTheme(): void {
+  useEffect(() => {
+    let cancelled = false;
+    void whenEngineReady().then(() => {
+      if (!cancelled) void loadTheme();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+}
+
+/**
+ * Cloud web (identity configured): apply the signed-in account's stored locale
+ * WITHOUT blocking any screen. Mounted only once a session exists — signed out,
+ * the gateway would 401 the preference reads anyway (and the sign-in screen
+ * renders in the browser-detected language). Keyed by uid so a fresh sign-in
+ * or an account switch re-resolves the preference.
+ */
+function SignedInLocaleSync() {
+  const session = useSession();
+  const uid = session.data?.uid;
+  if (!uid) return null;
+  return <LocaleSyncOnce key={uid} />;
+}
+
+function LocaleSyncOnce() {
+  // Mounted purely for the hook's apply-on-arrival effect (it swaps the live
+  // i18n language when the account's `locale` preference resolves).
+  useLocalePreference();
+  return null;
+}
+
+// No StrictMode — matches app/src/main.tsx (portal/listener double-mount churn).
+export default function AppTree() {
+  useEngineTheme();
+  // The Academy's usage economy, for the whole life of the page — mirrors
+  // `StartupEffects` in app/src/main.tsx. Above every gate and outside
+  // <App/> (which remounts per identity), so one instance pays each event once.
+  useUsageAccrual();
+  // Cloud web build (Firebase identity baked in): sign-in is the FIRST screen.
+  // The first-run language picker + agreement are desktop/self-host concepts —
+  // pre-auth they can't even persist (the gateway 401s preference writes, which
+  // dead-ended the agreement's Continue, HOU-1014). Language defaults to the
+  // browser and the account's stored preference applies after sign-in
+  // (SignedInLocaleSync); Settings keeps its picker for changes.
+  const cloudWeb = isIdentityConfigured();
+  const app = (
+    <>
+      <IdentityKeyedApp />
+      {/* Global workspace-file preview (chat file clicks) —
+          mirrors app/src/main.tsx. */}
+      <AgentFilePreviewHost />
+    </>
+  );
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ErrorBoundary>
+        <TooltipProvider>
+          <EngineGate>
+            <QueryPersistenceProvider>
+              <I18nextProvider i18n={i18n}>
+                {/* Web-only "Preview" pill — fixed + pointer-events-none, so it
+                    overlays every gate/screen without disturbing layout or clicks.
+                    Renders null off the preview deployment. */}
+                <PreviewBadge />
+                {cloudWeb ? (
+                  <>
+                    <SignedInLocaleSync />
+                    {app}
+                  </>
+                ) : (
+                  // The agreement gate (DisclaimerGate) renders inside App,
+                  // after sign-in — mirrors app/src/main.tsx.
+                  <LanguageGate>{app}</LanguageGate>
+                )}
+              </I18nextProvider>
+            </QueryPersistenceProvider>
+          </EngineGate>
+        </TooltipProvider>
+      </ErrorBoundary>
+    </QueryClientProvider>
+  );
+}

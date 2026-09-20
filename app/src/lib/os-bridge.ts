@@ -1,0 +1,562 @@
+/**
+ * OS-native Tauri IPC bridge.
+ *
+ * Post-Phase-4 this module is the ONLY place in `app/src/` that may call
+ * `invoke(...)`. Two classes of calls live here:
+ *
+ *  1. **OS-native helpers** (`osRevealFile`, `osPickDirectory`, …). These
+ *     probe the user's local machine (file manager, open URL, terminal, local
+ *     Claude CLI, local log writes) and will NEVER move to the engine —
+ *     the engine may run on a remote VPS.
+ *
+ *  2. **Local Tauri events** (`legacyListen`, `legacyEmit`). Used by
+ *     `events.ts` for events that never leave the desktop process —
+ *     e.g. `app-activated` (OS window resume).
+ *
+ * Invariant enforced by CI: `grep -rn "invoke(" app/src/` only matches
+ * this file.
+ */
+
+import type { LocalBridgeDevice, LocalBridgeIdentity } from "@tilinx/protocol";
+import type { LocalBridgeJournal, LocalBridgeNativePort } from "@tilinx/sdk";
+import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
+import {
+  type Event,
+  emit,
+  listen,
+  type UnlistenFn,
+} from "@tauri-apps/api/event";
+import type { DownloadEvent } from "@tauri-apps/plugin-updater";
+import type {
+  DictationModelProgress,
+  DictationModelStatus,
+} from "./dictation/types";
+import type { DetectedServer } from "./local-model";
+
+// ── Platform detection ────────────────────────────────────────────────
+
+/**
+ * True when running inside the Tauri desktop shell, false in a plain
+ * browser (the webapp / mobile PWA pointed at a remote engine).
+ *
+ * This is the load-bearing distinction for provider sign-in: only the
+ * desktop app is co-located with its engine, so only there can a
+ * provider CLI's `localhost` OAuth callback reach the user's browser.
+ * Remote clients must request the headless device-code flow instead
+ * (see the AI hub's `use-provider-connections`). Delegates to
+ * `@tauri-apps/api`'s blessed check (the global `isTauri` flag the
+ * webview sets) rather than poking internals ourselves.
+ */
+export function osIsTauri(): boolean {
+  return isTauri();
+}
+
+// ── Local Tauri events (non-domain) ──────────────────────────────────
+
+export function legacyListen<T>(
+  event: string,
+  handler: (ev: Event<T>) => void,
+): Promise<UnlistenFn> {
+  return listen<T>(event, handler);
+}
+
+export function legacyEmit(event: string, payload?: unknown): Promise<void> {
+  return emit(event, payload);
+}
+
+// ── OS-native helpers ─────────────────────────────────────────────────
+
+/** macOS folder picker (osascript). */
+export function osPickDirectory(): Promise<string | null> {
+  return invoke<string | null>("pick_directory");
+}
+
+/**
+ * Open a URL in the user's default browser. Resolves `false` when the browser
+ * REFUSED the open — the web build's popup blocker after an async hop — so a
+ * caller can offer an explicit click instead of claiming a tab it never
+ * opened. The desktop shell hands the URL to the OS and always resolves
+ * `true` (a failure rejects).
+ */
+export async function osOpenUrl(url: string): Promise<boolean> {
+  const opened = await invoke<boolean | undefined>("open_url", { url });
+  return opened !== false;
+}
+
+/** The outcome of asking the shell to bind a loopback listener. */
+export type OauthLoopbackStart =
+  | {
+      status: "listening";
+      /** `http://127.0.0.1:<port>/auth/callback` — the redirect target for the
+       *  loopback+PKCE flow (the GCIP-brokered flow derives its `localhost`
+       *  continueUri from `port` instead). */
+      redirectUri: string;
+      /** The bound loopback port; both `127.0.0.1` and `::1` listen on it. */
+      port: number;
+      /** Identifies this attempt's listener. `osCancelOauthLoopback` only acts
+       *  when it carries this id, so a late cancel can never free a NEWER
+       *  attempt's port. */
+      attemptId: number;
+    }
+  | {
+      /** A newer sign-in click already owns the loopback, so this (older)
+       *  invocation bound nothing and released anything it held. The caller
+       *  treats it as a benign supersession — no error, no session. */
+      status: "superseded";
+    }
+  | {
+      /** The requested `exactPort` is held by a foreign process (only returned
+       *  when `exactPort` was given). The GCIP-brokered caller re-mints its
+       *  authorize URL for the next candidate port and asks again. */
+      status: "portBusy";
+    };
+
+/** Start a one-shot localhost listener for the OAuth sign-in redirect. Keeps
+ * desktop sign-in entirely on the user's machine — no website relay, no
+ * custom-scheme "open app?" dialog. `expectedState` is the CSRF `state` this
+ * attempt minted: the listener answers a callback carrying any OTHER state with
+ * a "stale tab" page and KEEPS LISTENING, so a restored browser tab replaying an
+ * old redirect can no longer consume the port this sign-in is waiting on.
+ * Resolves `{ status: "superseded" }` when a NEWER click already claimed the
+ * loopback (concurrent starts are ordered by when the user clicked, not by which
+ * invocation finishes binding first). `exactPort` binds that one port or
+ * resolves `{ status: "portBusy" }` — the GCIP-brokered flow mints its
+ * authorize URL for a single port up front, so it cannot accept "some other
+ * free port". Desktop only; web clients have no local listener and use the
+ * firebase-js-sdk popup instead. */
+export function osStartOauthLoopback(
+  expectedState: string,
+  exactPort?: number,
+): Promise<OauthLoopbackStart> {
+  return invoke<OauthLoopbackStart>("start_oauth_loopback", {
+    expected_state: expectedState,
+    ...(exactPort === undefined ? {} : { exact_port: exactPort }),
+  });
+}
+
+/** Free a loopback listener's port immediately — called when a sign-in attempt
+ * is cancelled (sign-in screen unmount, sign-out) or times out, instead of
+ * waiting out the native 300s self-timeout. A no-op unless `attemptId` is still
+ * the current listener, so a stale cancel cannot kill the next attempt.
+ * Desktop only. */
+export function osCancelOauthLoopback(attemptId: number): Promise<void> {
+  return invoke<void>("cancel_oauth_loopback", { attempt_id: attemptId });
+}
+
+// ── Identity session persistence (Keychain / DPAPI, via Rust `auth_*`) ──────
+// The desktop identity session-store round-trips the session JSON blob through
+// these three commands (app/src-tauri/src/auth.rs → macOS Keychain / Windows
+// DPAPI-encrypted file). They are the ONLY new invoke calls session-store may
+// use — it must never call `invoke` directly. `osAuthGetItem` resolves null
+// when no entry exists; set/remove reject on failure so session-store surfaces
+// the fault (no silent swallow).
+
+/** Read the identity session blob for `key`; null when there is no entry. */
+export function osAuthGetItem(key: string): Promise<string | null> {
+  return invoke<string | null>("auth_get_item", { key });
+}
+
+/** Write the identity session blob for `key`. Rejects on a storage failure. */
+export function osAuthSetItem(key: string, value: string): Promise<void> {
+  return invoke<void>("auth_set_item", { key, value });
+}
+
+/** Remove the identity session blob for `key`. Rejects on a storage failure. */
+export function osAuthRemoveItem(key: string): Promise<void> {
+  return invoke<void>("auth_remove_item", { key });
+}
+
+/** Bind a one-shot localhost listener for the Codex/OpenAI OAuth redirect. On
+ * success the native side emits `codex-oauth://callback` with the raw
+ * `code=...&state=...` query string once OpenAI bounces the browser back;
+ * rejects with a message string if the port can't be bound. Desktop only, and
+ * only used against a REMOTE engine (pi's own 1455 is in the pod, so binding a
+ * LOCAL 1455 can't collide) — keeps ChatGPT sign-in zero-code even remotely.
+ * Mirrors {@link osStartOauthLoopback} (the GCIP/Google sign-in loopback). */
+export function osStartCodexOauthLoopback(): Promise<void> {
+  return invoke<void>("start_codex_oauth_loopback");
+}
+
+/** Run `claude auth login --claudeai` FOR the user on the desktop (zero
+ * terminal): the native side spawns the bundled `claude`, which opens the
+ * browser and catches its own callback. `handoff: false` (co-located engine)
+ * caches into TilinX's shared login dir — the same `CLAUDE_CONFIG_DIR` the
+ * engine reads. `handoff: true` (remote engine) mints into a separate
+ * throwaway handoff dir instead: the credential's refresh-token family will be
+ * owned by the gateway alone, so it must never be visible to a co-located
+ * engine (HOU-950). Emits `claude-login://url` (the authorize URL, as a
+ * fallback for the "didn't open" link) and `claude-login://done`
+ * (`{ success, error }`). Rejects only on an up-front spawn failure. */
+export function osStartClaudeLogin(handoff: boolean): Promise<void> {
+  return invoke<void>("start_claude_login", { handoff });
+}
+
+/** Extract the Anthropic OAuth credential the `claude` CLI just cached, as the
+ * CLI's `.credentials.json` JSON string (`{claudeAiOauth:{...}}`). Used ONLY
+ * for a REMOTE engine (`handoff: true`, the same dir the matching login minted
+ * into): the desktop pushes the extracted cred to the pod (which can't read
+ * this machine's Keychain). The native side reads the dir's
+ * `.credentials.json` or, on macOS, its dir-scoped Keychain item; rejects
+ * (never a silent empty) on not-found / parse failure so the caller can fall
+ * back to the paste flow. */
+export function osReadClaudeCredential(handoff: boolean): Promise<string> {
+  return invoke<string>("read_claude_credential", { handoff });
+}
+
+/** Destroy the handoff dir's cached Claude credential (file + Keychain item)
+ * once the push to the gateway has settled: from then on the gateway is the
+ * refresh-token family's ONLY rotator, and any surviving local copy is a
+ * revocation hazard (HOU-950). Idempotent; rejects with the real reason on a
+ * genuine deletion failure (the leftover is inert — nothing reads the handoff
+ * dir outside the login flow — so callers log rather than toast). */
+export function osDiscardClaudeHandoffCredential(): Promise<void> {
+  return invoke<void>("discard_claude_handoff_credential");
+}
+
+/** Relay a pasted authorization code to the in-flight desktop Claude sign-in.
+ * The claude.ai approval page shows a code when it cannot hand it to the CLI's
+ * local listener automatically (firewalls, strict browsers; common on Windows);
+ * the native side writes it to the `claude` child's stdin and the CLI finishes
+ * its own exchange — the outcome still arrives via `claude-login://done`.
+ * Rejects with the real reason when nothing is in flight or the write fails. */
+export function osSubmitClaudeLoginCode(code: string): Promise<void> {
+  return invoke<void>("submit_claude_login_code", { code });
+}
+
+/** Opportunistically finish the in-flight Claude sign-in from the clipboard:
+ * the approval page's "Copy code" + returning to TilinX is the stuck-hand-off
+ * signature, so the native side checks the clipboard for a code-shaped string
+ * and, when found, feeds it to the CLI. Resolves true when a code was consumed
+ * (completion still arrives via `claude-login://done`), false otherwise (no
+ * pending login / no matching clipboard text). Never rejects in practice. */
+export function osCompleteClaudeLoginFromClipboard(): Promise<boolean> {
+  return invoke<boolean>("complete_claude_login_from_clipboard");
+}
+
+/** Cancel an in-flight desktop Claude sign-in (kills the `claude` child). The
+ * native side then emits `claude-login://done` with `error: null` (a benign
+ * dismissal). No-op outside Tauri / when nothing is in flight. */
+export function osCancelClaudeLogin(): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("cancel_claude_login");
+}
+
+/** Drain the cold-start `tilinx://store/install` deep link the Rust shell
+ * stashed before the webview was ready (returns the raw URL and clears the
+ * stash, so a later read gets null). Resolves null when nothing is pending.
+ * Desktop only — a plain browser has no native stash. */
+export function osTakePendingStoreDeepLink(): Promise<string | null> {
+  if (!isTauri()) return Promise.resolve(null);
+  return invoke<string | null>("take_pending_store_deep_link");
+}
+
+/** Pull the TilinX window to the front. Used when a flow finishes in the
+ * user's browser (e.g. a Composio integration connection lands) and we want
+ * the app to surface itself — the same snap-back the sign-in loopback does.
+ * No-op outside Tauri. */
+export function osFocusWindow(): Promise<void> {
+  if (!isTauri()) return Promise.resolve();
+  return invoke<void>("focus_main_window");
+}
+
+/** Reveal an agent-relative file in Finder / Explorer. */
+export function osRevealFile(
+  agentPath: string,
+  relativePath: string,
+): Promise<void> {
+  return invoke<void>("reveal_file", {
+    agent_path: agentPath,
+    relative_path: relativePath,
+  });
+}
+
+/** Reveal the agent's folder in Finder / Explorer. */
+export function osRevealAgent(agentPath: string): Promise<void> {
+  return invoke<void>("reveal_agent", { agent_path: agentPath });
+}
+
+/** Reveal an arbitrary absolute path in Finder / Explorer. For files written
+ * outside any agent root (e.g. the portable-agent exporter's save dialog). */
+export function osRevealPath(path: string): Promise<void> {
+  return invoke<void>("reveal_path", { path });
+}
+
+/** Native "Save as…" for downloaded bytes — the desktop webview ignores
+ * anchor-download clicks (no download delegate), so the shell shows the OS
+ * save dialog and writes the file itself (HOU-703). The bytes travel as a raw
+ * IPC payload (not JSON) so large archives don't freeze the webview; the
+ * filename rides in the percent-encoded `x-download-name` header. Resolves
+ * with the chosen path, or null when the user cancelled the dialog. */
+export function osSaveDownload(
+  fileName: string,
+  bytes: Uint8Array,
+): Promise<WrittenFile | null> {
+  return invoke<WrittenFile | null>("save_download", bytes, {
+    headers: { "x-download-name": encodeURIComponent(fileName) },
+  });
+}
+
+/** Where a shell save landed. `renamedFrom` is the name the user chose when
+ *  that file was open in another program and the bytes went to a free
+ *  `name (2).ext` beside it instead (PRODUCT-1732). The save commands reject
+ *  with a `FileOpFailure` (`file-op-failure.ts`), never a raw OS string. */
+export interface WrittenFile {
+  path: string;
+  fileName: string;
+  renamedFrom: string | null;
+}
+
+/** Open an agent-relative file with the user's default application. */
+export function osOpenFile(
+  agentPath: string,
+  relativePath: string,
+): Promise<void> {
+  return invoke<void>("open_file", {
+    agent_path: agentPath,
+    relative_path: relativePath,
+  });
+}
+
+/** Resolve the app bundle/executable path before updater install moves it. */
+export function osCurrentAppBundlePath(): Promise<string> {
+  return invoke<string>("current_app_bundle_path");
+}
+
+/** Download the release the updater plugin's `check()` found, through the
+ * shell's own resumable client (retry with backoff, `Range` resume across a
+ * dropped stream), verify its signature, and stage the bytes. `rid` is the
+ * plugin's `Update` resource id. Progress arrives in the plugin's own event
+ * shape. Resolves with the staged-bytes resource id for `osInstallUpdate`;
+ * rejects with the shell's typed failure (`update-download-failure.ts`). */
+export function osDownloadUpdate(
+  rid: number,
+  onEvent: (event: DownloadEvent) => void,
+): Promise<number> {
+  const channel = new Channel<DownloadEvent>();
+  channel.onmessage = onEvent;
+  return invoke<number>("download_update", { rid, on_event: channel });
+}
+
+/** Install a release staged by `osDownloadUpdate`. On Windows the installer
+ * hand-off exits this process, so the promise never settles there. */
+export function osInstallUpdate(rid: number, bytesRid: number): Promise<void> {
+  return invoke<void>("install_update", { rid, bytes_rid: bytesRid });
+}
+
+/** Relaunch the installed app from a path captured before update install. */
+export function osRelaunchAppFromPath(appPath: string): Promise<void> {
+  return invoke<void>("relaunch_app_from_path", { app_path: appPath });
+}
+
+/** Append a line to `~/Library/Application Support/tilinx/logs/frontend.log`. */
+export function osWriteFrontendLog(
+  level: "error" | "warn" | "info" | "debug",
+  message: string,
+  context?: string,
+): Promise<void> {
+  return invoke<void>("write_frontend_log", { level, message, context });
+}
+
+/** Show a native "agent finished" notification on Linux/Windows whose click
+ * raises the window and emits `notification-clicked` (which navigates to the
+ * mission — a plain refocus does not). macOS uses the JS notification plugin
+ * instead — see session-notifications.ts. */
+export function osShowSessionNotification(
+  title: string,
+  body: string,
+): Promise<void> {
+  return invoke<void>("show_session_notification", { title, body });
+}
+
+/** Open the OS notification-settings pane so a user whose OS/browser blocked
+ * TilinX can grant delivery (macOS System Settings → Notifications; Windows
+ * Settings → Notifications). Resolves false on web (no OS pane) and on Linux
+ * (the native command reports it unsupported), which the caller reads as "hide
+ * the button". Rejects only on an unexpected native failure so it surfaces. */
+export async function osOpenNotificationSettings(): Promise<boolean> {
+  if (!isTauri()) return false;
+  return invoke<boolean>("open_notification_settings");
+}
+
+/** Read the last N lines from backend + frontend log files. */
+export function osReadRecentLogs(
+  lines = 50,
+): Promise<{ backend: string; frontend: string }> {
+  return invoke<{ backend: string; frontend: string }>("read_recent_logs", {
+    lines,
+  });
+}
+
+/** Send a prepared bug report to TilinX's native bug-report intake.
+ * Resolves with the Linear issue identifier (e.g. "BUG-123") when known. */
+export function osReportBug(payload: unknown): Promise<string | null> {
+  return invoke<string | null>("report_bug", { payload });
+}
+
+/** Hidden diagnostics command: intentionally panic in native code so release
+ * builds can verify Rust/Tauri symbol upload and native stack rendering. */
+export function osTriggerNativeSentrySmokeTest(): Promise<void> {
+  return invoke<void>("sentry_native_stack_smoke_test");
+}
+
+// ── Local model bridge ────────────────────────────────────────────────
+
+export function osDetectLocalModels(): Promise<DetectedServer[]> {
+  return invoke<DetectedServer[]>("detect_local_models");
+}
+
+export function osLocalBridgeDevice(
+  identity: LocalBridgeIdentity,
+): Promise<LocalBridgeDevice> {
+  return invoke<LocalBridgeDevice>("local_bridge_device", { identity });
+}
+
+export function osLocalBridgeLegacyCandidate(
+  identity: LocalBridgeIdentity,
+): ReturnType<LocalBridgeNativePort["legacyCandidate"]> {
+  return invoke("local_bridge_legacy_candidate", { identity });
+}
+
+export function osCompleteBridgeMigration(
+  identity: LocalBridgeIdentity,
+): Promise<void> {
+  return invoke<void>("local_bridge_complete_migration", { identity });
+}
+
+export function osStartLocalBridge(
+  args: Parameters<LocalBridgeNativePort["start"]>[0],
+): ReturnType<LocalBridgeNativePort["start"]> {
+  return invoke("start_local_bridge", { args });
+}
+
+export function osRenewLocalBridge(
+  identity: LocalBridgeIdentity,
+  ticket: string,
+): Promise<void> {
+  return invoke<void>("renew_local_bridge", { identity, ticket });
+}
+
+export function osSavedBridgeTarget(
+  identity: LocalBridgeIdentity,
+): Promise<LocalBridgeJournal | null> {
+  return invoke<LocalBridgeJournal | null>("saved_bridge_target", { identity });
+}
+
+export function osSaveBridgeTarget(
+  identity: LocalBridgeIdentity,
+  journal: LocalBridgeJournal,
+): Promise<void> {
+  return invoke<void>("save_bridge_target", { identity, journal });
+}
+
+export function osForgetBridgeTarget(
+  identity: LocalBridgeIdentity,
+): Promise<void> {
+  return invoke<void>("forget_bridge_target", { identity });
+}
+
+export function osStopLocalBridge(
+  identity: LocalBridgeIdentity,
+): Promise<void> {
+  return invoke<void>("stop_local_bridge", { identity });
+}
+
+// ── First-run cloud migration (HOU-719) ──────────────────────────────────
+// Native, desktop-only: only the shell can read the OLD local install's
+// `~/.tilinx` tree and spawn the bundled host against it. The wizard exports
+// each legacy agent over loopback HTTP and uploads it to the cloud gateway.
+
+import type { LegacyDetection } from "./cloud-migration";
+
+/** Scan for legacy desktop data worth migrating. Fast, read-only. */
+export function osDetectLegacyTilinX(): Promise<LegacyDetection> {
+  return invoke<LegacyDetection>("detect_legacy_tilinx");
+}
+
+export interface TilinXBackup {
+  backupPath: string;
+  fileCount: number;
+  byteCount: number;
+}
+
+/** Make a full local backup of the user's TilinX data before the cloud
+ *  migration uploads it — a sibling copy named `<dir>-<timestamp>-backup`.
+ *  Can block on a large tree (the copy runs on the blocking pool). Rejects
+ *  with "nothing to back up" when there's no legacy data to copy. */
+export function osBackupTilinXData(): Promise<TilinXBackup> {
+  return invoke<TilinXBackup>("backup_tilinx_data");
+}
+
+/** Spawn (or return the already-running) passive migration-source host against
+ *  the legacy tree. Can block for MINUTES — its boot converts a big chat db
+ *  before the banner prints — so callers show a "preparing" state. Idempotent. */
+export function osStartMigrationSourceHost(): Promise<{
+  baseUrl: string;
+  token: string;
+}> {
+  return invoke<{ baseUrl: string; token: string }>(
+    "start_migration_source_host",
+  );
+}
+
+/** Kill the migration-source host. Idempotent — absent is success. */
+export function osStopMigrationSourceHost(): Promise<void> {
+  return invoke<void>("stop_migration_source_host");
+}
+
+// ── On-device dictation (bundled whisper.cpp sidecar) ──────────────────────
+// Native, desktop-only: transcription runs entirely on the user's machine, so
+// (like the local-model bridge above) this never moves to the engine.
+
+/** Transcribe a recorded WAV clip. The raw bytes ride the IPC payload (same
+ *  raw-payload pattern as `osSaveDownload`) so a multi-megabyte clip can't
+ *  freeze the webview; the language hint rides the `x-dictation-lang` header.
+ *  Rejects with the exact string "model-not-ready" when the model hasn't
+ *  been downloaded (or is the wrong size on disk), or with a
+ *  `DictationSidecarFailure` object (message "transcription-timeout" or
+ *  "dictation: whisper exited with ...") carrying whisper's stderr tail. */
+export function osTranscribeAudio(
+  wav: Uint8Array,
+  langHint: string,
+): Promise<string> {
+  return invoke<string>("transcribe_audio", wav, {
+    headers: { "x-dictation-lang": langHint },
+  });
+}
+
+/** Whether the pinned dictation model is on disk. */
+export function osDictationModelStatus(): Promise<DictationModelStatus> {
+  return invoke<DictationModelStatus>("dictation_model_status");
+}
+
+/** Download (and sha256-verify) the pinned dictation model. Idempotent —
+ *  resolves immediately if already ready. Progress rides the
+ *  `dictation-model-progress` event; subscribe via
+ *  {@link onDictationModelProgress} before calling this. */
+export function osDownloadDictationModel(): Promise<void> {
+  return invoke<void>("download_dictation_model");
+}
+
+/** Subscribe to `dictation-model-progress` ticks emitted while
+ *  {@link osDownloadDictationModel} runs. Mirrors how `local-bridge-status`
+ *  is consumed (see `useLocalBridgeStatus`) — resolves with the unlisten fn. */
+export function onDictationModelProgress(
+  handler: (progress: DictationModelProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<DictationModelProgress>("dictation-model-progress", (ev) =>
+    handler(ev.payload),
+  );
+}
+
+/** The shell's process-start stamp (epoch ms) — the app-open T0 the perf
+ *  spans measure from (HOU-1011). `null` outside Tauri or on a shell too old
+ *  to serve the command (the caller falls back to `performance.timeOrigin`). */
+export async function osLaunchT0Ms(): Promise<number | null> {
+  if (!osIsTauri()) return null;
+  try {
+    return (await invoke<number | null>("launch_t0_ms")) ?? null;
+  } catch {
+    // Older shell without the command — the webview clock is close enough.
+    return null;
+  }
+}

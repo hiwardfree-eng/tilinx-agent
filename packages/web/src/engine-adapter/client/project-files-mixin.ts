@@ -1,0 +1,193 @@
+import type { ProjectFile } from "../../../../../ui/engine-client/src/types";
+import * as controlPlane from "../control-plane";
+import type { BaseCtor } from "./mixin";
+
+export function ProjectFilesMixin<TBase extends BaseCtor>(Base: TBase) {
+  class ProjectFiles extends Base {
+    // ---- composer attachments ----
+    // Upload the dropped files into the selected agent's workspace (its durable
+    // `uploads/` folder) via the host's /agents/:id/attachments route; the
+    // runtime's clamped file tools then Read them at the relative paths returned
+    // here (the sender encodes those paths into the message), in this turn or any
+    // later conversation. Standalone web has no workspace to write into — fail loud.
+    async saveAttachments(scopeId: string, files: File[]): Promise<string[]> {
+      if (files.length === 0) return [];
+      if (!this.ctx.cp) throw new Error("Attachments need a cloud workspace.");
+      return controlPlane.saveAttachments(
+        this.ctx.cp,
+        this.ctx.requireAgentId(),
+        scopeId,
+        files,
+      );
+    }
+
+    // ---- project files (the agent's REAL workspace) ----
+    // In cloud mode the workspace is a GCS prefix served by the control plane at
+    // /agents/:id/files*. agentPath IS the agentId here (folderPath = agent.id).
+    // In synthetic/local web mode there is no real workspace, so these are inert.
+    // Routed through cpFetch so reads ride the same transient-retry path as
+    // every other control-plane call (HOU-1085: a bare gatewayAuthFetch here
+    // gave files listings zero retries through a brief network blip).
+    private async cpFilesFetch(
+      agentId: string,
+      path: string,
+      init?: RequestInit,
+    ): Promise<Response> {
+      if (!this.ctx.cp)
+        throw new Error("cpFilesFetch called without a control-plane config");
+      return controlPlane.cpFetch(
+        this.ctx.cp,
+        `/agents/${encodeURIComponent(agentId)}/${path}`,
+        init,
+      );
+    }
+    /** Lists the files in an agent's workspace.
+     * @assistant group:files */
+    async listProjectFiles(agentPath: string): Promise<ProjectFile[]> {
+      if (!this.ctx.cp) return [];
+      return (await (
+        await this.cpFilesFetch(agentPath, "files")
+      ).json()) as ProjectFile[];
+    }
+    /** Reads a file from an agent's workspace.
+     * @assistant group:files */
+    async readProjectFile(agentPath: string, relPath: string): Promise<string> {
+      if (!this.ctx.cp) return "";
+      const res = await this.cpFilesFetch(
+        agentPath,
+        `files/read?path=${encodeURIComponent(relPath)}`,
+      );
+      const body = (await res.json()) as { content: string; base64: boolean };
+      return body.base64 ? atob(body.content) : body.content;
+    }
+    /** Downloads a file from an agent's workspace.
+     *
+     * Raw bytes of a workspace file (binary-safe) plus its served MIME type.
+     * @assistant group:files hidden: binary download; returns a Blob no chat turn can carry. */
+    async downloadProjectFile(
+      agentPath: string,
+      relPath: string,
+    ): Promise<{ blob: Blob; contentType: string }> {
+      if (!this.ctx.cp) throw new Error("downloads need a cloud workspace");
+      const res = await this.cpFilesFetch(
+        agentPath,
+        `files/download?path=${encodeURIComponent(relPath)}`,
+      );
+      return {
+        blob: await res.blob(),
+        contentType:
+          res.headers.get("content-type") ?? "application/octet-stream",
+      };
+    }
+    /** Permanently deletes a file from an agent's workspace.
+     * @assistant group:files confirm */
+    async deleteFile(agentPath: string, relPath: string): Promise<void> {
+      if (!this.ctx.cp) return;
+      await this.cpFilesFetch(
+        agentPath,
+        `files?path=${encodeURIComponent(relPath)}`,
+        { method: "DELETE" },
+      );
+    }
+    /** Renames a file in an agent's workspace.
+     * @assistant group:files confirm */
+    async renameFile(
+      agentPath: string,
+      relPath: string,
+      newName: string,
+    ): Promise<void> {
+      if (!this.ctx.cp) return;
+      await this.cpFilesFetch(agentPath, "files/rename", {
+        method: "POST",
+        body: JSON.stringify({ path: relPath, newName }),
+      });
+    }
+    /** Creates a folder in an agent's workspace.
+     * @assistant group:files unconfirmed: Creates an empty folder without replacing existing content. */
+    async createFolder(
+      agentPath: string,
+      folderName: string,
+    ): Promise<{ created: string }> {
+      if (!this.ctx.cp) return { created: folderName };
+      return (await (
+        await this.cpFilesFetch(agentPath, "files/folder", {
+          method: "POST",
+          body: JSON.stringify({ path: folderName }),
+        })
+      ).json()) as { created: string };
+    }
+    /** Uploads files from the user's device into an agent's workspace.
+     *
+     * Upload browser Files into the workspace (Files section drag-drop /
+     * Browse / folder pick), optionally into a subfolder. Folder-derived files
+     * carry `webkitRelativePath`, forwarded as `relPath` so the host stores them
+     * nested and the folder structure survives (HOU-889); hosts predating it
+     * ignore the field and store the flat name. Small files batch together
+     * (the same size-budgeted plan attachments use) so a many-file folder
+     * doesn't turn into hundreds of round trips, while every request stays
+     * within the host's upload cap.
+     * @assistant group:files hidden: binary upload; browser File objects the Files section hands it. */
+    async uploadProjectFiles(
+      agentPath: string,
+      files: File[],
+      targetDir?: string | null,
+    ): Promise<void> {
+      if (files.length === 0) return;
+      if (!this.ctx.cp)
+        throw new Error("Uploading files needs a connected host.");
+      for (const batch of controlPlane.planAttachmentBatches(files)) {
+        await this.cpFilesFetch(agentPath, "files/import", {
+          method: "POST",
+          body: JSON.stringify({
+            dir: targetDir ?? null,
+            files: await Promise.all(
+              batch.map(async (f) => ({
+                name: f.name,
+                contentBase64: controlPlane.bytesToBase64(
+                  new Uint8Array(await f.arrayBuffer()),
+                ),
+                relPath: controlPlane.uploadRelPath(f),
+              })),
+            ),
+          }),
+        });
+      }
+    }
+    /** Moves a file into another folder of an agent's workspace.
+     *
+     * Move a file/folder into another folder (null = workspace root).
+     * @assistant group:files confirm */
+    async moveProjectFile(
+      agentPath: string,
+      relPath: string,
+      toDir: string | null,
+    ): Promise<void> {
+      if (!this.ctx.cp) throw new Error("Moving files needs a connected host.");
+      await this.cpFilesFetch(agentPath, "files/move", {
+        method: "POST",
+        body: JSON.stringify({ path: relPath, toDir }),
+      });
+    }
+    /** Downloads everything in an agent's workspace as one archive.
+     *
+     * One zip of the workspace ("Download all") or, with `path`, of a single
+     * folder's subtree — for deployments with no local file manager to reveal
+     * in (cloud pods, web builds).
+     * @assistant group:files hidden: binary download; returns a zip Blob no chat turn can carry. */
+    async downloadProjectArchive(
+      agentPath: string,
+      path?: string,
+    ): Promise<{ blob: Blob; contentType: string }> {
+      if (!this.ctx.cp) throw new Error("Downloads need a connected host.");
+      const res = await this.cpFilesFetch(
+        agentPath,
+        `files/archive${path ? `?path=${encodeURIComponent(path)}` : ""}`,
+      );
+      return {
+        blob: await res.blob(),
+        contentType: res.headers.get("content-type") ?? "application/zip",
+      };
+    }
+  }
+  return ProjectFiles;
+}

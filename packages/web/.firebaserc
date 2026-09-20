@@ -1,0 +1,13 @@
+{
+  "projects": {
+    "default": "gettilinx"
+  },
+  "targets": {
+    "gettilinx": {
+      "hosting": {
+        "production": ["tilinx-web"],
+        "preview": ["tilinx-web-preview"]
+      }
+    }
+  }
+}

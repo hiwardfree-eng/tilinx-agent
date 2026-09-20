@@ -1,0 +1,15 @@
+<script>
+  // Download gate config — env-injected at build time (src/_data/env.js). The
+  // Supabase anon key is a public, RLS-protected client key.
+  window.TILINX_DL_CONFIG = {
+    supabaseUrl: "{{ env.supabaseUrl }}",
+    supabaseAnonKey: "{{ env.supabaseAnonKey }}",
+    sheetEndpoint: "{{ env.waitlistSheetEndpoint }}"
+  };
+</script>
+<script defer src="/assets/download-gate-countries.js"></script>
+<script defer src="/assets/download-gate-placement.js"></script>
+<script defer src="/assets/download-gate-anchor.js"></script>
+<script defer src="/assets/download-gate-dropdown.js"></script>
+<script defer src="/assets/download-gate-form.js"></script>
+<script defer src="/assets/download-gate.js"></script>

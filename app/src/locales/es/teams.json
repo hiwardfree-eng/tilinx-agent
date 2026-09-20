@@ -1,0 +1,609 @@
+{
+  "agentAdmin": {
+    "title": "Configuración del agente",
+    "rows": {
+      "knowledge": {
+        "title": "Aprendizajes"
+      },
+      "model": {
+        "title": "Modelos de IA"
+      },
+      "people": {
+        "title": "Personas"
+      },
+      "integrations": {
+        "title": "Integraciones"
+      }
+    },
+    "values": {
+      "allModels": "Cualquier modelo",
+      "modelCount_one": "solo {{count}} modelo",
+      "modelCount_other": "solo {{count}} modelos",
+      "allApps": "Cualquier app",
+      "appCount_one": "solo {{count}} app",
+      "appCount_other": "solo {{count}} apps"
+    },
+    "models": {
+      "question": "¿Qué modelos de IA puede usar este agente?",
+      "policyHelper": "Tú decides con qué modelos puede ejecutarse este agente. Las personas con acceso eligen su propio modelo entre los que permitas.",
+      "anyLabel": "Permitir todos los modelos",
+      "anyDesc": "Las personas con acceso pueden ejecutar este agente con cualquier modelo disponible.",
+      "pickedLabel": "Solo los modelos que elijas",
+      "pickedDesc": "Las personas con acceso solo pueden usar los modelos que permitas abajo.",
+      "allowModel": "Permitir {{name}}",
+      "searchModels": "Buscar modelos",
+      "clearSearch": "Borrar búsqueda",
+      "labFilter": "Filtrar por laboratorio",
+      "allLabs": "Todos los laboratorios",
+      "searchLabs": "Buscar laboratorios",
+      "noLabs": "No se encontraron laboratorios",
+      "noModels": "No se encontraron modelos",
+      "allowedHeading": "Modelos permitidos",
+      "allowedEmpty": "Aún no eliges modelos. Agrega modelos abajo.",
+      "allowedEmptyLab": "Aún no eliges modelos de este laboratorio.",
+      "addHeading": "Agregar modelos"
+    },
+    "integrations": {
+      "unavailable": "Los límites de integraciones no están disponibles aquí."
+    },
+    "heroes": {
+      "people": "Personas permitidas",
+      "integrations": "Integraciones permitidas",
+      "models": "Modelos de IA permitidos"
+    }
+  },
+  "agentSettings": {
+    "railLabel": "Secciones de la configuración del agente",
+    "manage": {
+      "sectionTitle": "Configuración",
+      "identity": "Cambiar color y nombre",
+      "identityTitle": "Cambiar color y nombre de {{name}}",
+      "moveTeam": "Mover a otro equipo",
+      "chooseTeam": "Elegir un equipo",
+      "moveOrganization": "Mover a otra organización",
+      "moveOrganizationDescription": "Mueve este agente a una organización para que un equipo pueda trabajar con él.",
+      "publish": "Publicar en la Tienda de agentes",
+      "publishDescription": "Comparte este agente para que cualquiera pueda instalarlo. Las conversaciones se mantienen privadas.",
+      "delete": "Eliminar agente"
+    },
+    "people": {
+      "helper": "Elige si todo tu equipo puede usar este agente o solo las personas que tú elijas.",
+      "anyLabel": "Todo tu equipo",
+      "anyDesc": "Cualquier persona del equipo puede usar este agente, incluidas las que se sumen después.",
+      "pickedLabel": "Solo personas específicas",
+      "pickedDesc": "Solo las personas que elijas abajo pueden usar este agente.",
+      "everyoneNote": "Todo tu equipo puede usar este agente, así que no hay nada que definir persona por persona. Cambia a Solo personas específicas para gestionar el acceso individualmente.",
+      "confirmEveryone": {
+        "title": "¿Dar acceso a todo el equipo?",
+        "description": "Esto reemplaza la lista actual. Todo tu equipo podrá usar este agente y se quitará el acceso de Manager que hayas dado aquí.",
+        "confirm": "Sí, dar acceso a todos",
+        "cancel": "Cancelar"
+      },
+      "confirmSpecific": {
+        "title": "¿Cambiar a personas específicas?",
+        "description_one": "La {{count}} persona que puede usar este agente hoy conserva el acceso. Las personas que se sumen después no se agregarán automáticamente.",
+        "description_other": "Las {{count}} personas que pueden usar este agente hoy conservan el acceso. Las personas que se sumen después no se agregarán automáticamente.",
+        "confirm": "Sí, elegir personas",
+        "cancel": "Cancelar"
+      }
+    }
+  },
+  "agentTeams": {
+    "create": {
+      "title": "Crear un equipo",
+      "submit": "Crear equipo",
+      "newAgent": "Nuevo agente",
+      "members": "Miembros, opcional",
+      "membersSelected_one": "{{count}} miembro seleccionado",
+      "membersSelected_other": "{{count}} miembros seleccionados"
+    },
+    "form": {
+      "iconAndName": "Icono y nombre",
+      "nameLabel": "Nombre del equipo",
+      "namePlaceholder": "p. ej., Marketing",
+      "tooLong": "Usa menos de {{max}} caracteres."
+    },
+    "errors": {
+      "default_team": {
+        "title": "Este es el equipo principal del espacio",
+        "body": "Todas las personas del espacio ya están en él, así que no se puede eliminar y no tiene una lista de miembros aparte."
+      },
+      "personal_space": {
+        "title": "Solo tú estás en este espacio",
+        "body": "Aquí puedes agrupar tus agentes en equipos. Para trabajar con otras personas, crea una organización."
+      },
+      "not_team_owner": {
+        "title": "Solo los propietarios de este equipo pueden cambiarlo",
+        "body": "Pídele a una de esas personas que haga este cambio."
+      },
+      "invalid_team_id": {
+        "title": "No pudimos saber a qué equipo moverlo",
+        "body": "No cambió nada. Inténtalo de nuevo."
+      },
+      "invalid_name": {
+        "title": "Ese nombre de equipo no sirve",
+        "body": "El nombre de un equipo tiene que ser corto, hasta 60 caracteres. Prueba con uno más corto."
+      },
+      "invalid_icon": {
+        "title": "No pudimos poner ese icono",
+        "body": "No cambió nada. Elige uno de los iconos de la lista."
+      },
+      "invalid_color": {
+        "title": "No pudimos poner ese color",
+        "body": "No cambió nada. Elige uno de los colores de la lista."
+      },
+      "not_a_member": {
+        "title": "Esa persona todavía no está en este espacio",
+        "body": "Invítala al espacio primero y después agrégala a este equipo."
+      }
+    },
+    "leave": "Salir del equipo",
+    "memberCount_one": "{{count}} miembro",
+    "memberCount_other": "{{count}} miembros",
+    "settings": {
+      "members": {
+        "title": "Personas",
+        "subtitle": "Las personas que se unieron a este equipo.",
+        "empty": "Todavía nadie se unió a este equipo.",
+        "error": "No pudimos cargar esta lista. Vuelve a intentarlo.",
+        "defaultNote": "Todas las personas de este espacio ya están en este equipo, así que no hay una lista aparte que gestionar.",
+        "adminNote": "Los propietarios y managers de este espacio pueden gestionar todos los equipos, por eso no aparecen aquí.",
+        "ownerLabel": "Propietario",
+        "memberLabel": "Miembro",
+        "you": "(tú)",
+        "changeRole": "Cambiar el rol de {{name}}",
+        "remove": "Quitar"
+      }
+    }
+  },
+  "integrations": {
+    "allowlist": {
+      "question": "¿Qué integraciones puede usar este agente?",
+      "policyHelper": "Tú decides qué integraciones puede usar este agente. Las personas con acceso igual conectan sus propias cuentas para cada integración que permitas.",
+      "anyLabel": "Permitir todas las integraciones",
+      "anyDesc": "Las personas con acceso pueden conectar este agente a cualquiera de más de 1000 integraciones.",
+      "pickedLabel": "Solo integraciones que elijas",
+      "pickedDesc": "Las personas con acceso solo pueden usar las integraciones que permitas abajo.",
+      "allowApp": "Permitir {{name}}",
+      "allowedHeading": "Integraciones permitidas",
+      "allowedEmpty": "Aún no elegiste integraciones. Agrega integraciones abajo.",
+      "allowedEmptyCategory": "Aún no hay integraciones permitidas en esta categoría.",
+      "addHeading": "Agregar integraciones"
+    }
+  },
+  "org": {
+    "title": "Administración",
+    "tabs": {
+      "label": "Secciones de administración",
+      "people": "Personas",
+      "billing": "Facturación",
+      "companyContext": "Contexto de la empresa",
+      "activity": "Actividad",
+      "usage": "Uso",
+      "timeWorked": "Tiempo trabajado"
+    },
+    "companyContextHint": "Lo que todos tus agentes saben en cada tarea y rutina que ejecutan.",
+    "loading": "Cargando tu espacio de trabajo...",
+    "unavailable": "No pudimos cargar tu espacio de trabajo."
+  },
+  "permissions": {
+    "agentPeople": {
+      "none": "Sin acceso",
+      "noneHint": "No puede usar este agente.",
+      "changeAccess": "Cambiar acceso de {{name}}",
+      "viewerOnly": "Puedes usar este agente. Alguien que lo administre puede cambiar quién tiene acceso.",
+      "empty": {
+        "title": "Aún no hay personas",
+        "body": "Invita a tu equipo desde la página de Administración para gestionar su acceso aquí."
+      }
+    }
+  },
+  "share": {
+    "title": "Compartir {{name}}",
+    "subtitle": "Elige quién puede usar este agente.",
+    "button": "Compartir",
+    "viewTitle": "Quién tiene acceso a {{name}}",
+    "viewSubtitle": "Estas personas pueden usar este agente compartido.",
+    "sectionTitle": "Compartir este agente",
+    "sectionHelper": "Agrega compañeros que puedan usar este agente y elige quién puede gestionarlo.",
+    "peopleCount_one": "{{count}} persona con acceso",
+    "peopleCount_other": "{{count}} personas con acceso",
+    "overflow": "+{{count}}",
+    "addPeople": "Agregar personas",
+    "searchPeople": "Busca por nombre o correo",
+    "noPeople": "No queda nadie por agregar.",
+    "empty": {
+      "title": "Nadie más tiene acceso todavía",
+      "body": "Agrega a un compañero para que pueda chatear con este agente."
+    },
+    "conversationNote": "Todos los que tienen acceso comparten la conversación de este agente.",
+    "you": "Tú",
+    "ownerAccess": "Propietario, siempre tiene acceso",
+    "remove": "Quitar",
+    "changeAccessFor": "Cambiar el acceso de {{name}}",
+    "selfNote": "Cambiar tu propio acceso aquí puede quitarte la capacidad de gestionar este agente.",
+    "managerRequiresSeat": "Solo los compañeros con un puesto de Manager pueden gestionar agentes.",
+    "levels": {
+      "manager": "Manager",
+      "user": "Puede usar",
+      "managerHint": "Puede usar y reconfigurar este agente.",
+      "userHint": "Puede chatear con este agente, pero no cambiarlo."
+    },
+    "selfLockout": {
+      "title": "¿Cambiar tu propio acceso?",
+      "description": "Estás a punto de quitarte la capacidad de gestionar este agente. Es posible que no puedas deshacerlo por tu cuenta.",
+      "confirm": "Sí, cambiarlo",
+      "cancel": "Cancelar"
+    }
+  },
+  "people": {
+    "createOrganization": {
+      "title": "Crea una organización para invitar personas",
+      "body": "Para invitar a otras personas, crea una organización.",
+      "cta": "Crear organización"
+    },
+    "adminNotice": "Puedes ver a tu equipo. Solo el propietario puede agregar o quitar personas.",
+    "add": {
+      "title": "Agregar a alguien",
+      "subtitle": "Invita a un compañero por correo. Si aún no tiene TilinX, le enviaremos una invitación.",
+      "emailLabel": "Correo",
+      "emailPlaceholder": "nombre@empresa.com",
+      "roleLabel": "Rol",
+      "submit": "Agregar",
+      "added": "{{email}} se agregó a tu equipo.",
+      "invited": "Invitación enviada a {{email}}. Se unirá cuando inicie sesión."
+    },
+    "roles": {
+      "owner": "Propietario",
+      "admin": "Manager",
+      "user": "Miembro"
+    },
+    "roleHelp": {
+      "owner": "Los propietarios tienen control total de la organización, incluidas las personas y la facturación.",
+      "admin": "Los managers crean y ejecutan agentes.",
+      "user": "Los miembros usan los agentes que se comparten con ellos."
+    },
+    "invites": {
+      "title": "Invitaciones pendientes",
+      "empty": "No hay invitaciones pendientes.",
+      "invitedBy": "Invitado por {{name}}",
+      "revoke": "Revocar",
+      "revokeLabel": "Revocar la invitación de {{email}}"
+    },
+    "roster": {
+      "title": "Equipo",
+      "you": "(tú)",
+      "changeRole": "Cambiar el rol de {{name}}",
+      "remove": "Quitar",
+      "removeLabel": "Quitar a {{name}}"
+    },
+    "removeConfirm": {
+      "title": "¿Quitar a {{name}}?",
+      "description": "Perderá el acceso a todos los agentes que se le compartieron. Puedes volver a agregarla más tarde.",
+      "confirm": "Quitar",
+      "cancel": "Cancelar"
+    },
+    "makeOwnerConfirm": {
+      "title": "¿Hacer a {{name}} propietario?",
+      "description": "Los propietarios tienen control total de esta organización: personas, agentes y facturación. Puedes cambiarlo más tarde siempre que la organización conserve al menos un propietario.",
+      "confirm": "Hacer propietario"
+    },
+    "lastOwner": {
+      "title": "La organización necesita un propietario",
+      "body": "No puedes quitar ni degradar al único propietario. Primero haz propietario a alguien más."
+    }
+  },
+  "activityTab": {
+    "error": "No pudimos cargar la actividad.",
+    "empty": {
+      "title": "Aún no hay actividad",
+      "body": "Los cambios en tu equipo, agentes y apps aparecen aquí."
+    },
+    "loading": "Cargando...",
+    "showMore": "Mostrar más",
+    "roles": {
+      "owner": "Propietario",
+      "admin": "Manager",
+      "user": "Miembro"
+    },
+    "actions": {
+      "memberAdd": "{{actor}} agregó a {{name}} como {{role}}",
+      "memberRemove": "{{actor}} eliminó a {{name}}",
+      "memberRole": "{{actor}} cambió el rol de {{name}} a {{role}}",
+      "inviteCreate": "{{actor}} invitó a {{email}} como {{role}}",
+      "inviteRevoke": "{{actor}} canceló la invitación para {{email}}",
+      "inviteAccept": "{{actor}} se unió como {{role}}",
+      "agentCreate": "{{actor}} creó {{agent}}",
+      "agentRename": "{{actor}} renombró {{from}} a {{to}}",
+      "agentDelete": "{{actor}} eliminó {{agent}}",
+      "agentAssignments": "{{actor}} cambió quién puede usar {{agent}}",
+      "agentShared_one": "{{actor}} compartió {{agent}} con {{count}} persona",
+      "agentShared_other": "{{actor}} compartió {{agent}} con {{count}} personas",
+      "agentSettings": "{{actor}} cambió qué apps puede usar {{agent}}",
+      "orgSettings": "{{actor}} cambió la configuración de apps de tu organización",
+      "grantsSet": "{{actor}} permitió {{apps}} para {{agent}}",
+      "agentConfigure": "{{actor}} actualizó la configuración de {{agent}}",
+      "unknown": "{{actor}} hizo un cambio ({{action}})"
+    }
+  },
+  "usageTab": {
+    "error": "No pudimos cargar el uso.",
+    "empty": {
+      "title": "Aún no hay uso",
+      "body": "Cuando tu equipo empiece a chatear con los agentes, los conteos de mensajes aparecen aquí."
+    },
+    "summary_one": "{{count}} mensaje en los últimos 30 días",
+    "summary_other": "{{count}} mensajes en los últimos 30 días",
+    "messages_one": "{{count}} mensaje",
+    "messages_other": "{{count}} mensajes"
+  },
+  "createTeam": {
+    "trigger": "Crear organización",
+    "title": "Crear una organización",
+    "description": "Las organizaciones te permiten compartir agentes y trabajar en conjunto. Puedes invitar a personas una vez que exista.",
+    "nameLabel": "Nombre de la organización",
+    "namePlaceholder": "p. ej. Marketing",
+    "submit": "Crear organización",
+    "creating": "Creando…",
+    "tooLong": "Usa un nombre de menos de {{max}} caracteres.",
+    "successTitle": "Organización \"{{name}}\" creada",
+    "successBody": "Invita a otras personas para trabajar juntos.",
+    "successAction": "Invita a tu equipo"
+  },
+  "shareViaTeam": {
+    "sectionHelper": "Este agente está en tu espacio personal. Muévelo a un equipo para compartirlo con tus compañeros.",
+    "button": "Invita a tu equipo",
+    "title": "Compartir {{name}} con un equipo",
+    "pick": {
+      "subtitle": "Elige un equipo al que mover este agente, o crea uno nuevo.",
+      "empty": "Aún no tienes un equipo. Crea uno para compartir este agente.",
+      "createTrigger": "Crear un equipo nuevo",
+      "namePlaceholder": "p. ej. Marketing",
+      "nameLabel": "Nombre del equipo",
+      "create": "Crear",
+      "creating": "Creando…",
+      "failed": "No pudimos crear el equipo. Inténtalo de nuevo."
+    },
+    "confirm": {
+      "body": "{{agent}} se moverá a {{team}}. Tú y tus compañeros lo encontrarán ahí.",
+      "downtime": "El agente se reinicia durante el traslado, así que puede no estar disponible por un momento.",
+      "cancel": "Cancelar",
+      "move": "Mover agente"
+    },
+    "moving": {
+      "heading": "Moviendo {{agent}} a {{team}}",
+      "body": "Esto puede tardar un momento. Mantén esta ventana abierta."
+    },
+    "switching": {
+      "heading": "Preparando {{team}}"
+    },
+    "switchFailed": {
+      "body": "Tu agente se movió a {{team}}, pero no pudimos cambiar a ese equipo. Reintenta para continuar con las invitaciones.",
+      "retry": "Reintentar",
+      "close": "Cerrar"
+    },
+    "moveFailed": {
+      "unsupported_move": "Este agente no se puede mover a ese equipo.",
+      "unmovable_volume": "El almacenamiento de este agente todavía no se puede mover automáticamente. Contacta con soporte.",
+      "needs_upgrade": "Este equipo necesita una mejora de plan antes de poder mover agentes a él.",
+      "unknown": "Algo salió mal durante el traslado.",
+      "timeout": "El traslado está tardando más de lo esperado. Puede que termine en segundo plano. Puedes reintentar o cerrar.",
+      "retry": "Reintentar",
+      "close": "Cerrar"
+    },
+    "invite": {
+      "subtitle": "{{agent}} ya está en {{team}}. Invita a personas para usarlo contigo.",
+      "emailPlaceholder": "nombre@empresa.com",
+      "add": "Agregar",
+      "send": "Enviar invitaciones",
+      "sending": "Enviando…",
+      "done": "Listo",
+      "status": {
+        "pending": "Pendiente",
+        "sending": "Enviando…",
+        "sent": "Invitado"
+      },
+      "error": {
+        "already_member": "Ya está en el equipo",
+        "generic": "No se pudo invitar. Inténtalo de nuevo."
+      }
+    },
+    "done": {
+      "heading": "Compartido con {{team}}"
+    }
+  },
+  "moveResume": {
+    "done": "{{agent}} terminó de moverse a {{team}}.",
+    "failed": "{{agent}} no pudo terminar de moverse a {{team}}. TilinX lo intentará de nuevo la próxima vez que inicie."
+  },
+  "moveTeam": {
+    "title": "Mover {{team}} a una organización",
+    "confirm": {
+      "body_one": "¿Mover {{team}} y su {{count}} agente a {{destination}}?",
+      "body_other": "¿Mover {{team}} y sus {{count}} agentes a {{destination}}?",
+      "downtime": "Los agentes se pausan mientras se mueven.",
+      "move": "Mover equipo"
+    },
+    "moving": "Moviendo {{name}} ({{index}} de {{total}})",
+    "movingBody": "Los agentes se mueven uno a la vez. Mantén esta ventana abierta.",
+    "cleanupSource": "Limpiando el equipo personal",
+    "switching": "Cambiando a la organización",
+    "recreate": "Recreando el equipo",
+    "placing": "Colocando los agentes en su equipo",
+    "moveFailedFirst_one": "No se pudo mover el agente.",
+    "moveFailedFirst_other": "No se movió ninguno de los {{count}} agentes. El primero no se pudo mover.",
+    "moveFailedNext": "Se movieron {{moved}} de {{total}} agentes. El siguiente no se pudo mover.",
+    "postscriptFailed_one": "El agente se movió, pero la configuración no terminó.",
+    "postscriptFailed_other": "Se movieron los {{count}} agentes, pero la configuración no terminó.",
+    "postscriptFailedEmpty": "El equipo no pudo terminar de moverse.",
+    "retry": "Intentar de nuevo",
+    "close": "Cerrar"
+  },
+  "moveTeamResume": {
+    "done": "{{team}} terminó de moverse a su organización.",
+    "failed": "{{team}} movió sus agentes, pero la configuración no terminó. TilinX lo intentará de nuevo la próxima vez que se inicie."
+  },
+  "billing": {
+    "unavailable": "No pudimos cargar la facturación de este equipo.",
+    "status": {
+      "free": "Gratis",
+      "trialing": "Prueba gratis",
+      "trialingDays_one": "Prueba gratis, queda {{count}} día",
+      "trialingDays_other": "Prueba gratis, quedan {{count}} días",
+      "active": "Activa",
+      "past_due": "Pago pendiente",
+      "expired": "Prueba terminada"
+    },
+    "seats_one": "{{count}} asiento",
+    "seats_other": "{{count}} asientos",
+    "interval": {
+      "monthly": "Facturación mensual",
+      "annual": "Facturación anual"
+    },
+    "pickPlan": "Elige un plan para sumar a todo tu equipo.",
+    "checkoutMonthly": "Mejorar, mensual",
+    "checkoutAnnual": "Mejorar, anual",
+    "manage": "Gestionar facturación",
+    "askOwner": "Solo el propietario puede cambiar la facturación. Pídele que mejore tu equipo.",
+    "trialPill_one": "Queda {{count}} día de prueba",
+    "trialPill_other": "Quedan {{count}} días de prueba"
+  },
+  "degrade": {
+    "owner": "La prueba de tu equipo terminó. Mejora el plan para que todos sigan trabajando.",
+    "member": "La prueba de tu equipo terminó. Pídele al propietario que mejore el plan.",
+    "upgrade": "Mejorar",
+    "writeBlockedTitle": "Necesitas mejorar el plan",
+    "writeBlockedBody": "La prueba de tu equipo terminó. Pídele al propietario que mejore el plan para hacer cambios."
+  },
+  "personalSpace": {
+    "inviteBlockedTitle": "Este es tu espacio personal",
+    "inviteBlockedBody": "Tu espacio personal es solo para ti. Crea un equipo para invitar a otras personas."
+  },
+  "inviteInbox": {
+    "title": "Invitaciones",
+    "headline": "Te invitaron a unirte a {{team}}",
+    "headlineFrom": "{{name}} te invitó a {{team}}",
+    "asRole": "Te unirás como {{role}}.",
+    "accept": "Aceptar",
+    "decline": "Rechazar",
+    "acceptLabel": "Aceptar la invitación a {{team}}",
+    "declineLabel": "Rechazar la invitación a {{team}}",
+    "railLabel_one": "{{count}} invitación pendiente",
+    "railLabel_other": "{{count}} invitaciones pendientes",
+    "joinedTitle": "Te uniste a {{team}}",
+    "joinedBody": "Cambia a ese espacio cuando quieras desde el menú de espacios, arriba en la barra lateral.",
+    "joinedBodyUnconfirmed": "No pudimos actualizar tus espacios en este momento. Abre el menú de espacios en un momento para encontrarlo.",
+    "errors": {
+      "needsUpgradeTitle": "Este equipo necesita mejorar su plan",
+      "needsUpgradeBody": "Su prueba terminó, así que no puede sumar personas ahora. Pídele a quien te invitó que mejore el plan y vuelve a aceptar.",
+      "alreadyMemberTitle": "Ya estás en este equipo",
+      "alreadyMemberBody": "No hay nada que hacer. Encuéntralo en el menú de espacios, arriba en la barra lateral.",
+      "goneTitle": "Esta invitación ya no está disponible",
+      "goneBody": "Se canceló o ya se usó. Pídele a tu equipo que te envíe una nueva."
+    }
+  },
+  "teamView": {
+    "defaultName": "Nuevo equipo",
+    "tabs": {
+      "missionControl": "Tareas",
+      "routines": "Rutinas",
+      "files": "Archivos",
+      "settings": "Configuración del equipo",
+      "context": "Contexto",
+      "people": "Personas",
+      "label": "Secciones del equipo"
+    },
+    "settingsTabs": {
+      "context": "Contexto",
+      "agents": "Agentes",
+      "people": "Personas",
+      "settings": "Configuración",
+      "label": "Secciones de configuración del equipo"
+    },
+    "settingsActions": {
+      "identity": "Cambiar icono y nombre",
+      "moveToOrganization": "Mover a una organización",
+      "moveToOrganizationDescription": "Mueve este equipo y sus agentes a una organización para que otras personas puedan trabajar con ellos.",
+      "leave": "Salir del equipo",
+      "delete": "Eliminar equipo",
+      "onlyTeamDeleteDescription": "Este es tu único equipo, así que no se puede eliminar."
+    },
+    "agentTabs": {
+      "settings": "Configuración del agente"
+    },
+    "archive": {
+      "open": "Archivadas",
+      "back": "Volver a tareas"
+    },
+    "move": {
+      "confirmTitle": "¿Mover {{agent}} a {{team}}?",
+      "confirmBody": "{{agent}} pasa a {{team}}. Las personas que pueden ver ese equipo verán este agente ahí.",
+      "confirm": "Mover agente",
+      "cancel": "Cancelar"
+    },
+    "agentMenu": {
+      "delete": "Eliminar agente"
+    },
+    "context": {
+      "title": "Contexto del equipo",
+      "explainer": "Todos los agentes de este equipo saben esto.",
+      "placeholder": "¿Qué debería saber cada agente de este equipo? La empresa, los clientes, cómo trabajan."
+    },
+    "missionControl": {
+      "empty": {
+        "workspaceTitle": "Aún no tienes agentes",
+        "workspaceBody": "Crea tu primer agente y sus tareas aparecerán aquí.",
+        "createAgent": "Crear agente",
+        "teamTitle": "Este equipo aún no tiene agentes",
+        "teamBody": "Crea un agente aquí o usa la sección Configuración del agente para moverlo a {{name}}."
+      }
+    },
+    "routines": {
+      "newRoutine": "Nueva rutina",
+      "empty": {
+        "workspaceTitle": "Aún no tienes agentes",
+        "workspaceBody": "Crea tu primer agente y todo lo que haga por su cuenta aparecerá aquí.",
+        "createAgent": "Crear agente",
+        "teamTitle": "Este equipo aún no tiene agentes",
+        "teamBody": "Crea un agente aquí o usa la sección Configuración del agente para moverlo a {{name}}."
+      },
+      "noRoutines": {
+        "title": "Todavía nada funciona solo",
+        "body": "Crea una rutina y los agentes de este equipo empezarán a trabajar sin que se lo pidas."
+      },
+      "unreadable": {
+        "title": "No pudimos cargar las rutinas de este equipo",
+        "body": "Nada de esto falta a propósito. Reintenta arriba para ver qué hacen estos agentes por su cuenta."
+      },
+      "pickAgent": {
+        "title": "¿Qué agente debería hacerlo?",
+        "description": "Elige el agente que hará el trabajo. Puedes cambiarlo mientras configuras la rutina."
+      }
+    },
+    "files": {
+      "empty": {
+        "workspaceTitle": "Aún no tienes agentes",
+        "workspaceBody": "Crea tu primer agente y los archivos que guarde aparecerán aquí.",
+        "createAgent": "Crear agente",
+        "teamTitle": "Este equipo aún no tiene agentes",
+        "teamBody": "Crea un agente aquí o usa la sección Configuración del agente para moverlo a {{name}}."
+      }
+    },
+    "settings": {
+      "navUnavailable": "Todavía no pudimos abrir la configuración de este agente",
+      "navUnavailableBody": "El equipo de este agente todavía se está cargando. Espera un momento y vuelve a intentarlo. Si sigue pasando, repórtalo como un error.",
+      "policy": {
+        "everyone": "Todos",
+        "people_one": "{{count}} persona",
+        "people_other": "{{count}} personas",
+        "integrationsAllowed_one": "{{count}} permitida",
+        "integrationsAllowed_other": "{{count}} permitidas",
+        "modelsAllowed_one": "{{count}} permitido",
+        "modelsAllowed_other": "{{count}} permitidos",
+        "allIntegrations": "Todas las integraciones permitidas",
+        "allModels": "Todos los modelos permitidos",
+        "unavailable": "No se pudo cargar"
+      }
+    }
+  }
+}

@@ -1,0 +1,310 @@
+# Web / desktop surface parity manifest.
+#
+# The React frontend in `app/src` (also shipped verbatim as `packages/web`),
+# built on the `@tilinx-ai/*` ui packages. This surface is ENFORCED: it must
+# implement (implemented or partial, never not-started/missing) every inventory
+# component whose `since <= inventoryVersion`. `pnpm check:parity` fails the
+# build otherwise. `ref` points at where the component lives today.
+#
+# Honesty note: `partial` flags a real structural gap even when the component
+# ships and works -- typically because the reusable, view-model-driven piece is
+# not yet in a shared `ui/` package (it is app/-locked), so a native surface
+# cannot reuse its structure. Those are the extract-before-mobile items.
+
+surface: web
+enforced: true
+inventoryVersion: 82
+
+components:
+  custom-integration-details:
+    status: implemented
+    ref: app/src/components/integrations/custom-edit-dialog.tsx
+  agent-avatar:
+    status: implemented
+    ref: "@tilinx-ai/core TilinXAvatar / AgentAvatar (resolveAgentColor)"
+
+  agent-list-item:
+    status: partial
+    ref: "@tilinx-ai/layout SidebarNavItem + @tilinx-ai/core TilinXAvatar"
+    notes: >-
+      No single shared agent-list-item component; the row is composed in app/
+      from generic nav + avatar primitives. Aggregate status is app-side.
+
+  conversation-feed:
+    status: implemented
+    ref: "@tilinx-ai/chat ChatPanel / ChatMessages / Conversation"
+
+  conversation-map-search:
+    status: implemented
+    ref: "@tilinx-ai/chat ConversationActionsMenu / ConversationMap / ConversationMapPanel"
+
+  assistant-message:
+    status: implemented
+    ref: "@tilinx-ai/chat ai-elements/message + markdown-code-block"
+
+  user-message:
+    status: implemented
+    ref: "@tilinx-ai/chat user-attachment-message + author-label"
+
+  thinking-indicator:
+    status: implemented
+    ref: "@tilinx-ai/chat ai-elements/reasoning + chat-status (deriveStatus)"
+
+  tool-call-chip:
+    status: implemented
+    ref: "@tilinx-ai/chat ai-elements/tool-block + tool-formatters"
+
+  provider-error-card:
+    status: partial
+    ref: "app/src/components/shell/provider-error-cards/* (types in @tilinx-ai/chat)"
+    notes: >-
+      Feed types + ProviderError taxonomy live in @tilinx-ai/chat, but the
+      rendered cards are app/-locked. Extract into ui/ before mobile can reuse.
+
+  agent-provisioning-card:
+    status: partial
+    ref: "app/src/components/shell/agent-provisioning-card.tsx (+ agent-warming-dialog.tsx)"
+    notes: >-
+      Card + blocked-write dialog are app/-locked and read the app's Zustand
+      provisioning store directly. Extract a props-driven ui/ piece before
+      mobile.
+
+  system-message:
+    status: implemented
+    ref: "@tilinx-ai/chat chat-system-message"
+
+  skill-invocation-message:
+    status: partial
+    ref: "@tilinx-ai/chat skill-message (decode) rendered in app/"
+    notes: Marker decode is shared; the card render is composed in app/.
+
+  composer:
+    status: implemented
+    ref: "@tilinx-ai/chat ChatInput / ai-elements/prompt-input; phone pickers open through @tilinx-ai/core ResponsivePopover (bottom sheet below the breakpoint)"
+
+  mention-autocomplete:
+    status: implemented
+    ref: "@tilinx-ai/chat ChatInputMentions / useMentionAutocomplete (mention-query)"
+
+  mention-chip:
+    status: implemented
+    ref: "@tilinx-ai/chat MentionChip + mention-spans (rendered through MessageResponse)"
+
+  turn-status:
+    status: implemented
+    ref: "@tilinx-ai/chat ChatStatusLine + chat-status"
+
+  progress-panel:
+    status: implemented
+    ref: "@tilinx-ai/chat ProgressPanel / useProgressSteps"
+
+  approval-surface:
+    status: implemented
+    ref: "@tilinx-ai/review ReviewItem / ReviewDetailPanel / DeliverableCard"
+
+  interaction-card:
+    status: implemented
+    ref: "@tilinx-ai/chat ChatInteractionCard (interaction-card + interaction-card-logic)"
+
+  interaction-approval-card:
+    status: partial
+    ref: "app/src/components/chat-approval-interaction-card.tsx (on @tilinx-ai/chat InteractionModal shell, via renderApproval)"
+    notes: >-
+      The shared InteractionModal shell + the stepper's renderApproval seam are in
+      @tilinx-ai/chat, but the composed approval card (app-identity resolution,
+      permission question, three-decision footer, keyboard handling) is
+      app/-locked and Composio-coupled, mirroring the app-supplied
+      renderConnect/renderSignin bodies. Extract before mobile can reuse its
+      structure.
+
+  plan-ready-card:
+    status: implemented
+    ref: "@tilinx-ai/chat ChatPlanReadyCard (chat-plan-ready-card + chat-plan-ready-card-model)"
+
+  suggest-reusable-card:
+    status: implemented
+    ref: "@tilinx-ai/chat ChatSuggestReusableCard (chat-suggest-reusable-card + chat-suggest-reusable-card-model)"
+
+  suggest-actions:
+    status: implemented
+    ref: "@tilinx-ai/chat ChatSuggestActions (ai-elements/suggestion)"
+
+  chat-mission-list:
+    status: implemented
+    ref: "@tilinx-ai/chat ChatMissionList; children resolved in app/src/lib/child-missions.ts"
+
+  chat-parent-mission-link:
+    status: implemented
+    ref: "@tilinx-ai/chat ChatParentMissionLink; parent resolved in app/src/lib/child-missions.ts"
+
+  interaction-answers-message:
+    status: partial
+    ref: "@tilinx-ai/chat interaction-answers-message (decode) + UserInteractionAnswersMessage; encode in app/"
+    notes: Decode + render are shared; the marker encoder lives in app/ (lib/interaction-answers-marker.ts, over lib/interaction-reply.ts), mirroring skill-invocation-message.
+
+  deliverable-card:
+    status: implemented
+    ref: "@tilinx-ai/review DeliverableCard / UserFeedback"
+
+  mission-card:
+    status: implemented
+    ref: "@tilinx-ai/board KanbanCard / KanbanListItem"
+
+  mission-board:
+    status: implemented
+    ref: "@tilinx-ai/board KanbanBoard / AIBoard / KanbanColumn, desktop-only: app/src/components/board/mission-board.tsx forks below md to board/team-task-list.tsx instead"
+
+  mentions-inbox:
+    status: partial
+    ref: "app/src/components/inbox/inbox-view.tsx (+ board/mentions-inbox-row.tsx, board/mentions-inbox-model.ts)"
+    notes: >-
+      Ships and works, but app/-locked: the row and the list live in app/src
+      rather than a shared @tilinx-ai/ package, so a native surface cannot yet
+      reuse their structure. The ordering + naming rules ARE already extracted
+      into DOM-free models (mentions-inbox-model / mentions-inbox-view-model).
+
+  mission-status-chip:
+    status: partial
+    ref: "@tilinx-ai/board + @tilinx-ai/review (per-package)"
+    notes: >-
+      Status rendering is duplicated across kanban-card, conversation-list and
+      review-item with divergent RunStatus enums. No shared status chip yet.
+
+  routine-row:
+    status: implemented
+    ref: "@tilinx-ai/routines RoutineRow / RoutinesGrid"
+
+  routine-details:
+    status: partial
+    ref: "app/src/components/tabs/routine-screen.tsx + routine-runs-dialog.tsx + routine-model-selector.tsx over @tilinx-ai/routines RoutineRunList / RoutineRowScheduleEdit"
+    notes: >-
+      The run list + schedule editor are shared ui/; the screen composition
+      (editable prompt, Runs modal, Back/Open-chat chrome) and the model row
+      (ChatModelSelector over the app's provider catalog) are app/-locked.
+      Extract before mobile.
+
+  skill-row:
+    status: partial
+    ref: "ui/skills skill-marketplace-row.tsx + app/src/components/skills/skill-catalog-rows.tsx + app/src/components/agent/installed-skills-strip.tsx"
+    notes: >-
+      Rides the shared ui/ catalog family (CatalogRow / CatalogAddButton /
+      CatalogShowMore / CatalogShell); the skills composition itself is split
+      between ui/skills and app/. Extract the surface before mobile.
+
+  empty-state:
+    status: implemented
+    ref: "@tilinx-ai/core Empty"
+
+  toast:
+    status: implemented
+    ref: "@tilinx-ai/core sonner / toast-container"
+
+  ai-provider-card:
+    status: partial
+    ref: "app/src/components/ai-hub/providers-pane.tsx + provider-browser/provider-row.tsx"
+    notes: >-
+      The hub row rides the shared ui/ catalog family (CatalogRow /
+      CatalogAddButton / CatalogShell), the Connected strip on its
+      `surface="card"` variant; the provider-specific composition and the
+      connect-flow card are still app/-locked. Extract before mobile.
+
+  connected-provider-usage:
+    status: partial
+    ref: "app/src/components/ai-hub/connected-provider-row.tsx (+ provider-usage-meters.tsx, provider-usage-model.ts)"
+    notes: >-
+      Ships on the hub's Connected rows but is app/-locked (the pure
+      pairing/format model and the meter composition live in app/, not a shared
+      ui/ package). Extract before mobile.
+
+  ai-model-row:
+    status: partial
+    ref: "app/src/components/ai-hub/model-card-row.tsx (in models-browser.tsx)"
+    notes: >-
+      The row rides the shared ui/ catalog family (CatalogRow / CatalogGrid);
+      the facet controls (ModelsBrowser) are app/-locked in the hub and shared
+      by the directory and the provider modal. Extract before mobile.
+
+  ai-model-offer-row:
+    status: partial
+    ref: "app/src/components/ai-hub/model-offer-row.tsx (on cards/row-card.tsx)"
+    notes: >-
+      Built on the shared RowCard but composed app-side with the connections
+      layer. Extract into ui/ before mobile.
+
+  verified-badge:
+    status: implemented
+    ref: "ui/core/src/components/verified-badge.tsx (@tilinx-ai/core VerifiedBadge)"
+
+  status-badge:
+    status: implemented
+    ref: "ui/core/src/components/status-badge.tsx (@tilinx-ai/core StatusBadge / StatusDot)"
+
+  agent-store-navigation:
+    status: implemented
+    ref: "@tilinx-ai/store StoreNav"
+  agent-store-controls:
+    status: implemented
+    ref: "@tilinx-ai/store CatalogControls"
+  agent-store-agent-card:
+    status: implemented
+    ref: "@tilinx-ai/store AgentCard / AgentGrid"
+  agent-store-creator-card:
+    status: implemented
+    ref: "@tilinx-ai/store CreatorCard / CreatorGrid"
+  agent-store-detail:
+    status: implemented
+    ref: "@tilinx-ai/store AgentDetailLayout"
+  agent-store-skill-list:
+    status: implemented
+    ref: "@tilinx-ai/store SkillList"
+  agent-store-creator-block:
+    status: implemented
+    ref: "@tilinx-ai/store CreatorBlock"
+  agent-store-home-screen:
+    status: implemented
+    ref: "@tilinx-ai/store StoreHomeScreen"
+  agent-store-agent-detail-screen:
+    status: implemented
+    ref: "@tilinx-ai/store AgentDetailScreen"
+  agent-store-creator-profile-screen:
+    status: implemented
+    ref: "@tilinx-ai/store CreatorProfileScreen"
+  sidebar-team-block:
+    status: implemented
+    ref: "@tilinx-ai/layout AppSidebar (SidebarGroupSection over SidebarGroupHeader + SidebarBlockContent; every rail row drawn through SidebarRowButton on the one anatomy in sidebar-classes.ts -- SidebarNavItem, SidebarBand, SidebarGroupHeader, SidebarItemRow, SidebarAddRow), composed in app/src/components/shell/team-sidebar-lists.tsx"
+  sidebar-nav-band:
+    status: implemented
+    ref: "@tilinx-ai/layout AppSidebar -> SidebarNavList (SidebarBand per labelled run, SidebarNavItem per row, one sidebarBandInset), built by app/src/components/shell/sidebar-nav-sections.tsx with the Workspace gates from useSurfaceGates() and the inbox count from useMentionInbox; the footer Settings row is app/src/components/shell/sidebar-footer.tsx"
+  team-identity-picker:
+    status: implemented
+    ref: "app/src/components/shell/team-identity-popover.tsx (swatch row + icon search + glyph grid over @tilinx-ai/layout SidebarGroupGlyph) inside the shared team-identity-name-row.tsx, rendered by create-agent-team-dialog.tsx and edit-team-identity-dialog.tsx (the rail menu's one Change icon & name door), composed in app/src/components/shell/team-identity.ts from AGENT_COLORS and rendered by app/src/components/shell/team-glyph.tsx; the write is useSetAgentTeamIdentity (optimistic) or sidebar.setGroupIdentity off-capability"
+  sidebar-teams-band:
+    status: implemented
+    ref: "@tilinx-ai/layout AppSidebar (SidebarBand + SidebarAddRow, both over SidebarRowButton), with app/src/components/shell/sidebar-create-dialog.tsx wearing sidebarRowAffordanceClasses and passed as sectionAction from app/src/components/shell/sidebar-rail.tsx (a modal of create-choice-tile.tsx squares)"
+  team-screen:
+    status: implemented
+    ref: "app/src/components/team-view/ (TeamView switching TeamMissionControl over @tilinx-ai/board MissionBoard, TeamRoutines over @tilinx-ai/routines RoutinesGrid, TeamFiles over the shared AgentFilesSurface, TeamSettings), with AgentReadsFailed naming any agent whose read failed; the phone Tasks list is board/team-task-list.tsx + team-task-row.tsx over the pure board/task-list-model.ts, its header menu team-view/team-tasks-menu.tsx, the two halves sharing board/task-list-chrome.tsx"
+  mobile-nav-bar:
+    status: implemented
+    ref: "app/src/components/shell/mobile-nav-bar.tsx binding @tilinx-ai/core FloatingNavBar (items + NeedsYouChip badge over the agent activity rollup), rules in app/src/lib/mobile-tabs.ts with the tap side in app/src/lib/open-mobile-tab.ts (nav-stack reset mode); the new-task control runs lib/new-mission.ts startNewMission over lib/new-mission-scope.ts and carries the guided setup's newMission tour anchor (onboarding/in-app-mobile-targets.ts)"
+  mobile-more-menu:
+    status: implemented
+    ref: "app/src/components/shell/mobile-more-menu.tsx (@tilinx-ai/core Sheet restyled as a floating card, ui store mobileMoreOpen) over the pure mobile-more-items.ts model, rows from sidebar-nav-sections.tsx buildSidebarNavItems so the destinations and tour anchors are the rail's own"
+  teams-home:
+    status: implemented
+    ref: "app/src/components/teams-home/ (TeamsHomeView over the pure teams-home-model.ts teamTreeRows + teamTreeTarget), section taps push through the ui store's openTeamView; the phone team screen header is app/src/components/team-view/team-mobile-header.tsx and the drilled level's phone tabs are team-view/team-settings-mobile-tabs.tsx under team-settings-header.tsx"
+  agents-home:
+    status: implemented
+    ref: "app/src/components/agents-home/ (AgentsHomeView switching AgentsHomeList / AgentMissionsScreen on the ui store's agentsHomeAgentId nav level), rows in agent-home-row.tsx over agent-avatar-stack.tsx (@tilinx-ai/core TilinXAvatar) + NeedsYouChip, the team selector in agents-home-team-filter.tsx over the ui store's agentsHomeTeamId, all over the pure agentHomeRows + agentRowsForTeam in agents-home-model.ts; tab root wiring in app/src/lib/open-mobile-tab.ts and the phone boot landing in use-workspace-view-guards.ts"
+  agent-missions-list:
+    status: implemented
+    ref: "app/src/components/agents-home/agent-missions-screen.tsx (shell/mobile-drilled-header.tsx + the shared board/task-list-filter.tsx status dropdown, board/task-list-menu.tsx chip behind agent-missions-menu.tsx, board/task-list-search.tsx) over agent-missions-list.tsx, drawing @tilinx-ai/board TaskListGroup bands of agent-mission-row.tsx (agent-avatar-stack.tsx + mission-status-tag.tsx) from the pure agent-missions-model.ts over board/task-list-model.ts (the board's missionColumnIdForStatus mapping); active rows push the chat via lib/mission-chat.ts, archived rows keep lib/open-agent.ts openAgentBoard + the published activityPanelId"
+  task-row:
+    status: implemented
+    ref: "@tilinx-ai/board task-row.tsx + task-list-group.tsx over the pure task-row-styles.ts status mapping; bound by app/src/components/agents-home/agent-missions-list.tsx and app/src/components/board/team-task-list.tsx"
+  mission-chat-screen:
+    status: implemented
+    ref: "app/src/components/mission-chat/ (MissionChatScreen over useMissionChatSource + the shared board/use-board-chat-wiring.tsx, rendered through @tilinx-ai/board AIBoard panelOnly), nav level chatAgentId/chatMissionId in lib/nav-stack.ts + stores/ui.ts openMissionChat, keyboard inset via hooks/use-visual-viewport-inset.ts, shell mount + bar hiding in shell/workspace-shell.tsx"
+  new-mission-sheet:
+    status: implemented
+    ref: "app/src/components/mobile-new-mission-sheet.tsx (@tilinx-ai/core Sheet side=bottom over the agent roster), opened by lib/new-mission.ts startNewMission's phone fork (ui store newMissionSheetOpen), picking pushes the draft chat via lib/mission-chat.ts"

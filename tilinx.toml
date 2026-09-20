@@ -1,0 +1,41 @@
+# Configuración de TilinX Agent (por defecto)
+# Misma filosofía que opencode: temas de color, servidor para uso remoto, agentes.
+
+[app]
+name = "TilinX Agent"
+version = "0.1.0"
+open_source = true
+
+# Tema de la UI (mismos themes que opencode: opencode-dark, opencode-light, custom)
+theme = "opencode-dark"
+accent = "#22d3ee"
+
+# Modelo por defecto (va al agente tilinx-ai / 9router)
+engine = "tilinx-ai"
+model = "oc/big-pickle"
+temperature = 0.6
+
+# Servidor para usar en otro dispositivo (igual que `opencode serve`)
+[server]
+enabled = false
+host = "127.0.0.1"
+port = 2099
+auth_token = ""          # deja vacío para generar uno al arrancar
+# Para acceso público: pon la URL del túnel Cloudflare en `public_url`
+
+# Agentes por tarea (multiagente paralelo)
+[agents]
+default = "tilinx-ai"
+max_parallel_tasks = 4
+dir = "agents/"
+# Cada md en agents/ es un agente (frontmatter: name, description, model, mode)
+
+[terminal]
+# TUI estilo opencode dev: permite la palabra "tilinXagent" en cualquier terminal
+enable_tui = true
+autostart_tui = false
+
+[tools]
+calls = true
+confirm_sensitive = true
+timeout_sec = 90

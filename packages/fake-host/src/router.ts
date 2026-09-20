@@ -1,0 +1,449 @@
+/**
+ * The fake host's request router: a pure `Request -> Response` function with no
+ * Node HTTP coupling, so it can be unit-tested and driven by any adapter.
+ *
+ * Answers just enough of the host + per-agent runtime for the desktop UI
+ * (app/src) to boot and run on the new-engine adapter in host mode — with NO
+ * real backend, no AI provider, no credentials. Deterministic and hermetic.
+ */
+
+import { buildProviderCatalog } from "@tilinx/host/src/providers/pi-catalog";
+import type { ChatMessage, PendingInteraction } from "@tilinx/protocol";
+import type { ProviderUsage } from "@tilinx/runtime-client";
+import { setNextInteraction, setNextReplyText, setReplyDelay } from "./chat";
+import {
+  clearChatStreams,
+  dropChatStreams,
+  killRunningTurns,
+  turnBoundary,
+} from "./chat-controls";
+import { SEED_AGENT_ID } from "./config";
+import { CORS, json } from "./http";
+import { handleAgents } from "./routes";
+import { handleAgentTeamsRoutes } from "./routes-agent-teams";
+import { handleUserRoutes } from "./routes-integrations";
+import { handleMeRoutes } from "./routes-me";
+import { lastPortableExport, resetPortable } from "./routes-portable";
+import { handleSetupRuntime } from "./routes-setup-runtime";
+import { handleSharedSkillsRoutes } from "./routes-shared-skills";
+import { handleSpaceInvitesControl, handleSpacesRoutes } from "./routes-spaces";
+import { handleTeamsRoutes } from "./routes-teams";
+import { sseResponse } from "./sse";
+import type { FakeCapabilities, TeamsSettings } from "./state";
+import * as state from "./state";
+
+async function parseBody(
+  req: Request,
+): Promise<Record<string, unknown> | undefined> {
+  if (req.method === "GET" || req.method === "HEAD") return undefined;
+  // A binary upload (the migration import's zip) keeps its body stream for
+  // the route: `req.json()` would consume it and leave nothing to unpack.
+  if (req.headers.get("content-type")?.includes("application/zip"))
+    return undefined;
+  return (await req.json().catch(() => undefined)) as
+    | Record<string, unknown>
+    | undefined;
+}
+
+/** Global reactivity feed (`GET /v1/events`). Mirrors the host's SSE shape:
+ *  `data: { type, agentPath, workspaceId }`. control-plane.ts subscribeEvents
+ *  translates these into TanStack Query invalidations. */
+function openDomainStream(req: Request): Response {
+  return sseResponse(req, (sink) => {
+    sink.comment("connected");
+    const off = state.onDomainEvent((event) => {
+      if (!sink.closed) sink.data(event);
+    });
+    req.signal.addEventListener("abort", off);
+  });
+}
+
+/** Route one request to a `Response`. The single entry point for every adapter. */
+export async function handle(req: Request): Promise<Response> {
+  const url = new URL(req.url);
+  const path = url.pathname;
+  const method = req.method;
+
+  if (process.env.FAKE_HOST_LOG && method !== "OPTIONS")
+    console.log(`[fake-host] ${method} ${path}`);
+
+  if (method === "OPTIONS")
+    return new Response(null, { status: 204, headers: CORS });
+
+  // --- test-control plane (called server-to-server by the harness) ---
+  if (path === "/__test__/reset" && method === "POST") {
+    clearChatStreams();
+    resetPortable();
+    state.reset();
+    return json({ ok: true });
+  }
+  // What the last portable export carried — the copy wizard's selection.
+  if (path === "/__test__/portable-export" && method === "GET") {
+    return json({ selection: lastPortableExport() });
+  }
+  if (path === "/__test__/emit" && method === "POST") {
+    const body = await parseBody(req);
+    state.emit(
+      String(body?.type ?? "AgentsChanged"),
+      body?.agentPath as string | undefined,
+    );
+    return json({ ok: true });
+  }
+  // Sever every open chat stream mid-turn (the turns keep producing into the
+  // replay log) — the network-drop half of the reconnect e2e.
+  if (path === "/__test__/drop-chat-streams" && method === "POST") {
+    return json({ dropped: dropChatStreams() });
+  }
+  // Slow the canned reply so a test can land a drop mid-turn deterministically.
+  if (path === "/__test__/chat-config" && method === "POST") {
+    const body = await parseBody(req);
+    setReplyDelay(Number(body?.replyDelayMs ?? 15));
+    return json({ ok: true });
+  }
+  // Arm the NEXT scripted turn to reply with this exact text instead of the
+  // echo — how a spec makes "the agent said X" happen. One-shot.
+  if (path === "/__test__/chat-reply" && method === "POST") {
+    const body = await parseBody(req);
+    setNextReplyText(typeof body?.text === "string" ? body.text : null);
+    return json({ ok: true });
+  }
+  // Arm the NEXT scripted turn to end on a pending interaction: its `done`
+  // frame carries it, so the settle lands the card on needs_you + composer card.
+  if (path === "/__test__/chat-interaction" && method === "POST") {
+    const body = await parseBody(req);
+    setNextInteraction(
+      (body?.interaction as PendingInteraction | null) ?? null,
+    );
+    return json({ ok: true });
+  }
+  // Seed a conversation's transcript verbatim: `{ conversationId, messages }`
+  // (optionally `agentId`, default the seeded agent). The only way to reach a
+  // SHARED conversation locally — user messages carrying the `author` the
+  // gateway stamps in multiplayer — for the sender-attribution spec.
+  if (path === "/__test__/chat-history" && method === "POST") {
+    const body = await parseBody(req);
+    const messages = Array.isArray(body?.messages)
+      ? (body.messages as ChatMessage[])
+      : [];
+    return json({
+      messages: state.seedHistory(
+        typeof body?.agentId === "string" ? body.agentId : SEED_AGENT_ID,
+        String(body?.conversationId ?? ""),
+        messages,
+      ),
+    });
+  }
+  // Synthesize the dead-pump reaper's terminal error on every running turn.
+  if (path === "/__test__/kill-turn" && method === "POST") {
+    return json({ killed: killRunningTurns() });
+  }
+  // End the running turn while nobody watches, then start the next one —
+  // the resync-across-a-turn-boundary simulation.
+  if (path === "/__test__/turn-boundary" && method === "POST") {
+    const body = await parseBody(req);
+    return json({
+      advanced: turnBoundary(String(body?.nextText ?? "next turn")),
+    });
+  }
+  // Stall every per-agent read (`GET /agents/:id/*`) by `ms` — the cloud
+  // gateway's `ensureAwake` hold: an asleep pod's reads hang until it wakes.
+  // `{ ms: 0 }` (and the per-test reset) answers instantly again.
+  if (path === "/__test__/hold-agent-reads" && method === "POST") {
+    const body = await parseBody(req);
+    state.setAgentReadHoldMs(Number(body?.ms ?? 0));
+    return json({ ms: state.state.agentReadHoldMs });
+  }
+  // Fail every per-agent read (`GET /agents/:id/*`) for the named agents with a
+  // 500, leaving the rest healthy — the half-broken fleet the cross-agent
+  // sweep must survive (HOU-981). `{ segments: ["routine_runs"] }` narrows it
+  // to named sub-resources, the subtler state where one route is down while the
+  // rest of that same agent answers. `{ agentIds: [] }` (and the per-test
+  // reset) restores them.
+  if (path === "/__test__/fail-agent-reads" && method === "POST") {
+    const body = await parseBody(req);
+    state.setFailingAgentReads(
+      Array.isArray(body?.agentIds) ? body.agentIds.map(String) : [],
+      Array.isArray(body?.segments) ? body.segments.map(String) : null,
+    );
+    return json({
+      agentIds: [...state.state.failingAgentReads],
+      segments: state.state.failingAgentReadSegments
+        ? [...state.state.failingAgentReadSegments]
+        : null,
+    });
+  }
+  // Rewind the routine-id counter so the NEXT created routine reuses an id an
+  // earlier agent already has (`{ next: 0 }` = start over at `routine-1`).
+  // Routine ids are unique per AGENT in the real host, so two agents holding
+  // `routine-1` is ordinary truth; the fake's single global counter is the only
+  // reason a spec would never see it.
+  if (path === "/__test__/routine-seq" && method === "POST") {
+    const body = await parseBody(req);
+    state.setRoutineSeq(Number(body?.next ?? 0));
+    return json({ next: state.state.routineSeq });
+  }
+  // Toggle Composio readiness: "ready" | "unavailable" (503) | "signin" |
+  // "absent" (not registered at all — only the custom provider, when armed).
+  if (path === "/__test__/integrations-mode" && method === "POST") {
+    const body = await parseBody(req);
+    state.setIntegrationsMode(
+      body?.mode === "unavailable" ||
+        body?.mode === "signin" ||
+        body?.mode === "absent"
+        ? body.mode
+        : "ready",
+    );
+    return json({ mode: state.integrationsMode() });
+  }
+  // Arm the custom-integrations feature (HOU-550): `{items: [...]}` serves the
+  // definitions + a ready `custom` provider; `{items: null}` disarms (404s —
+  // the pre-feature host shape). Reset restores disarmed.
+  if (path === "/__test__/custom-integrations" && method === "POST") {
+    const body = await parseBody(req);
+    state.setCustomIntegrations(
+      Array.isArray(body?.items)
+        ? (body.items as state.CustomIntegrationSeed[])
+        : null,
+    );
+    return json({ items: state.listCustomIntegrations() });
+  }
+  // Override advertised capabilities (Teams e2e): merge a partial into the set,
+  // e.g. `{ integrations:["composio"], multiplayer:true, teams:true, role:"owner" }`
+  // to reach the Teams-shaped state single-player can't. Reset restores the seed.
+  if (path === "/__test__/capabilities" && method === "POST") {
+    const body = await parseBody(req);
+    return json(
+      state.setCapabilities((body ?? {}) as Partial<FakeCapabilities>),
+    );
+  }
+  // Arm the compute-usage dataset `GET /v1/org/compute-usage` serves (pair with
+  // `/__test__/capabilities` `{computeUsage:true}`); `{seed:null}` disarms.
+  if (path === "/__test__/compute-usage" && method === "POST") {
+    const body = await parseBody(req);
+    return json({
+      seed: state.setComputeUsage(
+        (body?.seed ?? null) as state.ComputeUsageSeed | null,
+      ),
+    });
+  }
+  // Arm the rows `GET /providers/usage` serves — the live per-account usage the
+  // AI Models hub's Connected rows render (windows, credits, non-ok states).
+  // `{rows:null}` restores the default seed (the Claude subscription).
+  if (path === "/__test__/provider-usage" && method === "POST") {
+    const body = await parseBody(req);
+    return json({
+      rows: state.setProviderUsage(
+        (body?.rows ?? null) as ProviderUsage[] | null,
+      ),
+    });
+  }
+  // Arm the Teams settings the gateway serves at the settings routes below:
+  // the agent + org integration ceilings, the model ceiling, and agent access.
+  if (path === "/__test__/agent-settings" && method === "POST") {
+    const body = await parseBody(req);
+    return json(state.setTeamsSettings((body ?? {}) as Partial<TeamsSettings>));
+  }
+  // Arm the per-member access lens (Admin > People drill-in): a multi-member
+  // org roster (`members`) `GET /v1/org` serves, and the agent fleet with
+  // per-agent assignments (`agents`) `GET /agents` serves. Pair with
+  // `/__test__/capabilities` `{multiplayer:true, teams:true, role:"owner"}`.
+  if (path === "/__test__/org" && method === "POST") {
+    const body = await parseBody(req);
+    if (Array.isArray(body?.members)) {
+      state.setOrgMembers(body.members as state.FakeMember[]);
+    }
+    if (Array.isArray(body?.agents)) {
+      state.armAgents(body.agents as state.AgentAccessSeed[]);
+    }
+    return json({
+      members: state.getOrgMembers(),
+      agents: state.listAgents(),
+    });
+  }
+  // Arm the C13 agent-team world `GET /v1/org/teams` serves: `{ teams: [{ id,
+  // name, isDefault?, sortOrder?, icon?, color?, agentIds?, members? }],
+  // personalSpace? }`. Omit `icon`/`color` to arm a team that HAS no identity —
+  // the field is then absent from the row, and so from the wire.
+  // Arming REPLACES it wholesale; an omitted (or `null`) `teams` clears it back
+  // to lazy, so the next read mints the default team again. The client
+  // feature-detects on the capability, not on this data, so pair it with
+  // `/__test__/capabilities` `{ agentTeams:true }`. Returns the armed value.
+  if (path === "/__test__/agent-teams" && method === "POST") {
+    const body = await parseBody(req);
+    return json(
+      state.armAgentTeams(
+        Array.isArray(body?.teams)
+          ? (body.teams as state.AgentTeamSeed[])
+          : null,
+        body?.personalSpace === true,
+      ),
+    );
+  }
+  // Arm the team-space rows `GET /v1/workspaces` bridges in (C8 Spaces): each
+  // `{ slug, name }` becomes an `{ id:"org:<slug>", kind:"org" }` switcher row,
+  // served alongside the always-present personal seed row. A `slug` must be
+  // exactly 16 lowercase hex chars (the id grammar `space-id.ts` enforces).
+  // Pair with `/__test__/capabilities` `{ spaces:true }`. Reset (or `{teams:[]}`)
+  // restores the personal-only list.
+  if (path === "/__test__/workspaces" && method === "POST") {
+    const body = await parseBody(req);
+    const teams = Array.isArray(body?.teams) ? body.teams : [];
+    const rows = teams.flatMap((t) => {
+      const row = t as { slug?: unknown; name?: unknown };
+      if (typeof row.slug !== "string" || !/^[a-f0-9]{16}$/.test(row.slug)) {
+        return [];
+      }
+      return [
+        {
+          id: `org:${row.slug}`,
+          name: typeof row.name === "string" ? row.name : row.slug,
+        },
+      ];
+    });
+    return json({ teams: state.setTeamWorkspaces(rows) });
+  }
+  // Arm the invitee-side invite inbox `GET /v1/orgs` surfaces in `invites` (C8
+  // Spaces): `{ invites: [{ orgName, role?, invitedBy?, orgSlug?, id?,
+  // reject? }] }`. Only `orgName` is required. `reject` forces that invite's
+  // accept/decline rejection (`needs_upgrade` 403 / `already_member` 409 /
+  // `invite_not_found` 404) so the error paths are reachable. Pair with
+  // `/__test__/capabilities` `{ spaces:true }` — the sidebar card is
+  // capability-gated on the CLIENT, not here. `{ invites: [] }` (and reset)
+  // empties the inbox.
+  if (path === "/__test__/space-invites" && method === "POST") {
+    return handleSpaceInvitesControl(await parseBody(req));
+  }
+  // Seed a connection at a status the UI can't be clicked into: `pending` (an
+  // abandoned sign-in) or `error` (the provider refused). `{toolkit, status}`.
+  if (path === "/__test__/integrations-connection" && method === "POST") {
+    const body = await parseBody(req);
+    const status = body?.status;
+    return json({
+      connection: state.seedConnection(
+        String(body?.toolkit ?? ""),
+        status === "active" || status === "error" ? status : "pending",
+        {
+          ...(typeof body?.accountLabel === "string" && body.accountLabel
+            ? { accountLabel: body.accountLabel }
+            : {}),
+          // Mint a NEW connection even when the toolkit already has one, so a
+          // spec can stack several accounts on one app (HOU-901).
+          ...(body?.extraAccount === true ? { extraAccount: true } : {}),
+        },
+      ),
+    });
+  }
+  // Flip a pending connection to active (models the OAuth completing).
+  if (path === "/__test__/integrations-activate" && method === "POST") {
+    const body = await parseBody(req);
+    return json({
+      activated: state.activateConnection(String(body?.connectionId ?? "")),
+    });
+  }
+
+  // --- global reactivity feed ---
+  if (path === "/v1/events" && method === "GET") return openDomainStream(req);
+
+  const segs = path.split("/").filter(Boolean);
+  const body = await parseBody(req);
+
+  // --- top-level host probes ---
+  if (path === "/health") return json({ status: "ok", version: "e2e" });
+  if (path === "/version") return json({ engine: "e2e", protocol: 1 });
+
+  // --- pre-agent connect surface (the WebApp gate + ConnectView) ---
+  // The real host serves this ONLY under /setup-runtime/* — no flat
+  // /auth/status or /providers exists there, so none exists here either.
+  const setupRoute = handleSetupRuntime(method, path, url, body);
+  if (setupRoute) return setupRoute;
+
+  // --- misc host surface the UI may touch on boot (kept permissive) ---
+  // Deployment capabilities: single-player local by default (the app's boot
+  // routing waits on this — App.tsx gates onboarding-vs-shell on loaded
+  // capabilities). Armed to a Teams-shaped set by `/__test__/capabilities`.
+  if (path === "/v1/capabilities" && method === "GET") {
+    return json(state.getCapabilities());
+  }
+  // pi-ai's full static model catalog (`GET /v1/catalog`, wire `ProviderCatalog`).
+  // Built from the SAME real `buildProviderCatalog` the host route uses, so the
+  // mock can't drift from the wire contract — the app's `getCatalog()` hydrates
+  // the picker + AI Models tab from it. It returns every runnable provider on
+  // every deployment (no profile gating). Without this the route 404'd,
+  // `getCatalog()` degraded to `[]`, and the picker fell back to the override-only
+  // seed (no models).
+  if (path === "/v1/catalog" && method === "GET") {
+    return json(buildProviderCatalog());
+  }
+  // Personal-assistant discovery (`GET /v1/assistant`, `AssistantHandle`): the
+  // address the rail's Assistant row and its screen are gated on. The real host
+  // answers a hidden dot-named agent; the fake has no hidden tree, so the seeded
+  // agent stands in — the chat that opens then rides the ordinary per-agent
+  // runtime routes, which is the contract under test. The conversation id is
+  // the host's own constant, and no activity is created for it, so the
+  // assistant thread stays off every board exactly as it does in production.
+  if (path === "/v1/assistant" && method === "GET") {
+    return json({ agent: SEED_AGENT_ID, conversation: "assistant" });
+  }
+  const sharedSkillsRoute = handleSharedSkillsRoutes(method, segs, body);
+  if (sharedSkillsRoute) return sharedSkillsRoute;
+  // --- user-scoped gateway routes (integrations, preferences, locale) ---
+  const userRoute = handleUserRoutes(method, segs, body);
+  if (userRoute) return userRoute;
+
+  // --- Teams v2 gateway routes (agent + org settings / allowlist ceilings) ---
+  const teamsRoute = handleTeamsRoutes(method, segs, body, url);
+  if (teamsRoute) return teamsRoute;
+
+  // --- C13 agent teams (the space's teams of agents + people) ---
+  const agentTeamsRoute = handleAgentTeamsRoutes(method, segs, body);
+  if (agentTeamsRoute) return agentTeamsRoute;
+
+  // --- C8 Spaces gateway routes (the cross-org list + the invitee's inbox) ---
+  const spacesRoute = handleSpacesRoutes(method, segs, body);
+  if (spacesRoute) return spacesRoute;
+
+  // --- the caller's own editable display profile (name + photo) ---
+  const meRoute = handleMeRoutes(method, segs, body);
+  if (meRoute) return meRoute;
+
+  // --- everything under /agents/* ---
+  if (segs[0] === "agents") {
+    // Armed cold-start hold: per-agent READS stall like they do behind the
+    // cloud gateway while a pod wakes. The agent LIST (`GET /agents`) stays
+    // instant — in the real deployment it is a gateway answer, not a pod one.
+    // The runtime-proxy `providers` probes are exempt too: they are not what
+    // this control models, and holding them exhausts the browser's HTTP/1.1
+    // six-connection budget against the dev server, stalling even unheld
+    // boot routes — an artifact the real HTTP/2 gateway doesn't have.
+    if (
+      state.state.agentReadHoldMs > 0 &&
+      method === "GET" &&
+      segs.length > 1 &&
+      segs[2] !== "providers"
+    )
+      await new Promise((r) => setTimeout(r, state.state.agentReadHoldMs));
+    // Armed per-agent read failure: this agent's pod is unreachable while the
+    // rest of the fleet answers. Same shape the gateway returns for a pod it
+    // cannot reach, so the client's own error path runs unchanged. With
+    // `segments` armed only those sub-resources fail, which is the subtler
+    // half-broken state: one route down while the same agent answers the rest.
+    const failingSegments = state.state.failingAgentReadSegments;
+    if (
+      method === "GET" &&
+      segs.length > 1 &&
+      state.state.failingAgentReads.has(decodeURIComponent(segs[1])) &&
+      (failingSegments === null ||
+        (segs.length > 2 && failingSegments.has(decodeURIComponent(segs[2]))))
+    )
+      return json({ error: { message: "agent unreachable" } }, 500);
+    return handleAgents(
+      method,
+      segs.slice(1).map(decodeURIComponent),
+      req,
+      body,
+    );
+  }
+
+  console.warn(`[fake-host] 404 ${method} ${path}`);
+  return json({ error: { message: `no fake route for ${path}` } }, 404);
+}

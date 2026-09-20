@@ -1,0 +1,79 @@
+import { expect, test } from "./support/fixtures";
+import { agentRow, navRow } from "./support/team-nav";
+
+/**
+ * Collapsed-sidebar expand affordances (HOU-657): the workspace monogram at
+ * the TOP of the rail doubles as the expand button (hover swaps the initial
+ * for the expand icon), clicking empty rail space also expands, and clicks on
+ * interactive rail elements (nav, agents) keep their own action.
+ */
+test("collapsed sidebar expands from the top monogram and rail clicks", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await expect(navRow(page, "agent-store")).toBeVisible();
+
+  const sidebar = page.locator("[data-tour-target='sidebar']");
+
+  // Collapse via the (unchanged) top-right collapse button.
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(sidebar).toHaveCSS("width", "56px");
+
+  // Exactly one expand button, and it sits at the TOP of the rail (the
+  // monogram slot) — not at the bottom where the old toggle lived.
+  const expandBtn = page.getByRole("button", { name: "Expand sidebar" });
+  await expect(expandBtn).toHaveCount(1);
+  const btnBox = await expandBtn.boundingBox();
+  const asideBox = await sidebar.boundingBox();
+  if (!btnBox || !asideBox) throw new Error("missing bounding boxes");
+  expect(btnBox.y - asideBox.y).toBeLessThan(30);
+
+  // Hover swaps the monogram for the expand icon; click expands.
+  await expandBtn.hover();
+  await expect(expandBtn.locator("svg")).toBeVisible();
+  await expandBtn.click();
+  await expect(sidebar).toHaveCSS("width", "220px");
+
+  // Clicking an EMPTY spot on the collapsed rail expands too.
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(sidebar).toHaveCSS("width", "56px");
+  await page.mouse.click(asideBox.x + 28, asideBox.y + asideBox.height - 200);
+  await expect(sidebar).toHaveCSS("width", "220px");
+
+  // Clicking an interactive rail element (a nav button) must NOT expand.
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+  await expect(sidebar).toHaveCSS("width", "56px");
+  await sidebar.locator("nav button").first().click();
+  await expect(sidebar).toHaveCSS("width", "56px");
+});
+
+/**
+ * The agent row's "..." menu: the settings page's actions re-anchored on the
+ * rail. It sits in the affordance slot (outside the row button, after the
+ * needs-you count), is always visible (never hover-gated), and each action
+ * opens the SAME confirmation surface the agent's Settings section uses.
+ */
+test("an agent row's ... menu offers copy and delete behind their own dialogs", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const row = agentRow(page, "TilinX").locator("..");
+  const trigger = row.getByTestId("agent-row-menu");
+  await expect(trigger).toBeVisible();
+
+  // Copy opens the copy dialog, pre-named with the first free name.
+  await trigger.click();
+  await page.getByRole("menuitem", { name: "Copy agent" }).click();
+  await expect(page.locator("#agent-copy-name")).toHaveValue("TilinX copy");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#agent-copy-name")).toHaveCount(0);
+
+  // Delete asks for confirmation first; cancelling keeps the agent.
+  await trigger.click();
+  await page.getByRole("menuitem", { name: "Delete agent" }).click();
+  await expect(
+    page.getByRole("alertdialog").or(page.getByRole("dialog")).first(),
+  ).toContainText("Delete");
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(agentRow(page, "TilinX")).toBeVisible();
+});

@@ -1,0 +1,75 @@
+import {
+  AGENTS_HOME_VIEW_ID,
+  AI_HUB_VIEW_ID,
+  SETTINGS_VIEW_ID,
+  TEAM_VIEW_ID,
+} from "../../lib/top-level-views";
+import { ACADEMY_VIEW_ID, AcademyView } from "../academy";
+import { AgentsHomeView } from "../agents-home/agents-home-view";
+import { AiHubView } from "../ai-hub/ai-hub-view";
+import { ASSISTANT_VIEW_ID, AssistantView } from "../assistant";
+import { INTEGRATIONS_VIEW_ID, IntegrationsView } from "../integrations-view";
+import { ORGANIZATION_VIEW_ID, OrganizationView } from "../organization";
+import { SettingsView } from "../settings/settings-view";
+import { SKILLS_VIEW_ID, SkillsView } from "../skills-view";
+import { STORE_VIEW_ID, StoreView } from "../store-view";
+import { TeamView } from "../team-view/team-view";
+import { TEAMS_HOME_VIEW_ID } from "../teams-home/id";
+import { TeamsHomeView } from "../teams-home/teams-home-view";
+import type { KeepAliveView } from "./keep-alive-views";
+
+/**
+ * The cached top-level screens, separated from the shell's agent-tab chrome.
+ *
+ * Admin is a screen of its own here, gated so it is never even mounted where it
+ * would have nothing to show (`showOrganization`: multiplayer owner/admin, and
+ * a TEAM active space on a Spaces host). The Academy is ungated: learning the
+ * product exists in every deployment. Settings carries its own sections, About
+ * me among them (`lib/settings-sections.ts`).
+ *
+ * Two screens that used to be here are gone. Permissions listed the space's
+ * agents to reach one's settings page, which every team's "focused agent screen"
+ * section already does per team, in every deployment. Time worked is a lens
+ * inside Admin.
+ *
+ * Every team shares the ONE `team` screen for the same reason: it reads the
+ * open team and section from the UI store, so the cache survives switching
+ * between teams and no view id is ever orphaned by a deleted team.
+ */
+export function topLevelScreenViews(gates: {
+  showAiModels: boolean;
+  showOrganization: boolean;
+  showAssistant: boolean;
+}): KeepAliveView[] {
+  return [
+    // The app's landing screen, and the Agents tab's root on the phone.
+    // Ungated: boot waits here and every fallback lands here while no team has
+    // resolved, so it must exist before anything else does.
+    { id: AGENTS_HOME_VIEW_ID, enabled: true, content: <AgentsHomeView /> },
+    // Gated on DISCOVERY, not on a role: where no assistant exists there is no
+    // address to open a chat at, so the screen is never even mounted.
+    {
+      id: ASSISTANT_VIEW_ID,
+      enabled: gates.showAssistant,
+      content: <AssistantView />,
+    },
+    // The mobile Teams tab's root, ungated for the same reason.
+    { id: TEAMS_HOME_VIEW_ID, enabled: true, content: <TeamsHomeView /> },
+    { id: ACADEMY_VIEW_ID, enabled: true, content: <AcademyView /> },
+    { id: AI_HUB_VIEW_ID, enabled: gates.showAiModels, content: <AiHubView /> },
+    { id: SETTINGS_VIEW_ID, enabled: true, content: <SettingsView /> },
+    {
+      id: INTEGRATIONS_VIEW_ID,
+      enabled: true,
+      content: <IntegrationsView />,
+    },
+    {
+      id: ORGANIZATION_VIEW_ID,
+      enabled: gates.showOrganization,
+      content: <OrganizationView />,
+    },
+    { id: SKILLS_VIEW_ID, enabled: true, content: <SkillsView /> },
+    { id: STORE_VIEW_ID, enabled: true, content: <StoreView /> },
+    { id: TEAM_VIEW_ID, enabled: true, content: <TeamView /> },
+  ];
+}

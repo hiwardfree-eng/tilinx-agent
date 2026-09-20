@@ -1,0 +1,91 @@
+/**
+ * Control-plane surface for the web adapter — the barrel over the cohesive
+ * modules under `cp/`. In cloud, the web app talks to the TilinX control plane
+ * (not a single local runtime): agents are REAL and a conversation is proxied to
+ * the agent's sandbox, so chat reuses the exact same `TilinXEngineClient` +
+ * `streamTurn` path pointed at `${baseUrl}/agents/${agentId}`.
+ *
+ * This file is the ONE import site every caller and the test suite uses
+ * (`import … from "./control-plane"`) — the mixins import it as a namespace and
+ * the web tests `vi.mock("…/control-plane")` it — so the split into `cp/*`
+ * modules is invisible to consumers. `ControlPlaneConfig` and the shared
+ * transport live in `cp/fetch.ts`.
+ */
+
+// The type surface callers reference (some as `controlPlane.<Type>`). Re-exported
+// once here so importing from the adapter keeps a single import site and the v1
+// engine-client agrees.
+export type {
+  AddCustomIntegrationInput,
+  AddOrgMemberResult,
+  AgentAccess,
+  AgentAssignment,
+  AgentModelChoice,
+  AgentModelChoiceInfo,
+  AgentMoveStart,
+  AgentMoveStatus,
+  AgentSettings,
+  AgentTeam,
+  AgentTeamMember,
+  ApiKey,
+  ApiKeyCreated,
+  AuditEntry,
+  BillingCheckout,
+  BillingSummary,
+  ComputeUsage,
+  ComputeUsageRow,
+  CustomDetectResult,
+  CustomIntegrationView,
+  CustomToolInfo,
+  EditableProfile,
+  EditableProfileCustom,
+  EditableProfileUpdate,
+  IntegrationConnection,
+  IntegrationProviderStatus,
+  IntegrationToolkit,
+  OrgInfo,
+  OrgInvite,
+  OrgInviteSummary,
+  OrgMember,
+  OrgPerson,
+  OrgRole,
+  OrgSummary,
+  OrgsList,
+  TriggerStatusItem,
+  TriggerType,
+  UsageRow,
+  UserProfile,
+  UserProfilesResult,
+  WebhookKeyReveal,
+} from "../../../../ui/engine-client/src/types";
+
+export * from "./cp/agent-color";
+export * from "./cp/agent-color-sync";
+export * from "./cp/agent-color-write";
+export * from "./cp/agent-teams";
+export * from "./cp/agents";
+export * from "./cp/api-keys";
+export * from "./cp/attachments";
+export * from "./cp/billing";
+export * from "./cp/board";
+export * from "./cp/credentials";
+export * from "./cp/custom-integrations";
+export * from "./cp/events";
+export * from "./cp/fetch";
+export * from "./cp/files-context";
+export * from "./cp/integrations";
+export * from "./cp/marketplace";
+export * from "./cp/me-profile";
+export * from "./cp/org-team-members";
+export * from "./cp/org-teams";
+export * from "./cp/orgs";
+export * from "./cp/retry";
+export * from "./cp/routines";
+export * from "./cp/runtime-clients";
+export * from "./cp/setup-credentials";
+export * from "./cp/shared-skills";
+export * from "./cp/sidebar-layout";
+export * from "./cp/skills";
+export * from "./cp/spaces";
+export * from "./cp/transient-retry";
+export * from "./cp/unavailable-reason";

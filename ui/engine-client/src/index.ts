@@ -1,0 +1,19 @@
+/**
+ * @tilinx-ai/engine-client — TypeScript SDK for the TilinX Engine.
+ *
+ * Consumed by:
+ * - TilinX desktop app (`app/src/`) via `window.__TILINX_ENGINE__`
+ * - TilinX mobile app (direct connect, out of scope until Phase 5)
+ * - Third-party integrators (npm package)
+ *
+ * Single source of truth for the wire protocol, matching
+ * `engine/tilinx-engine-protocol`.
+ */
+
+export * from "./client.ts";
+export * from "./local-model-bridge.ts";
+export * from "./retry-after.ts";
+export * from "./store-catalog.ts";
+export * from "./types.ts";
+export * from "./vm.ts";
+export * from "./ws.ts";

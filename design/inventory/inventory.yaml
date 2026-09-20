@@ -1,0 +1,1885 @@
+# TilinX cross-surface component inventory
+#
+# THE CONTRACT
+# ------------
+# This file is the single source of truth for WHICH product components exist
+# across TilinX's surfaces and WHAT each one is (anatomy, states, semantics,
+# a11y). It handles STRUCTURAL parity only:
+#
+#   - BEHAVIOR parity  -> owned by the shared SDK view-models (packages/sdk).
+#   - LOOK parity      -> owned by design tokens (packages/design-tokens).
+#   - STRUCTURE parity -> owned by THIS inventory: does the component exist on
+#                         each surface, with the same anatomy/states/semantics?
+#
+# Every entry here is surface-AGNOSTIC. It describes the component once; each
+# surface (web/desktop, iOS, Android) then declares in its own manifest under
+# manifests/ whether it implements that component (implemented|partial|
+# not-started). scripts/check-parity.mjs (pnpm check:parity) enforces the
+# contract in CI: an enforced surface may not lag its declared inventoryVersion.
+#
+# SCOPE: only components that are genuinely cross-surface (will exist on native
+# mobile) belong here. Desktop-only chrome (menu bars, resizable panes, the file
+# tree, the schedule/cron editor, skill-authoring dialogs) is deliberately
+# excluded -- see design/inventory/README.md for the exclusion rationale.
+#
+# CHANGE FLOW: add/modify a component -> bump `version` -> add a CHANGELOG.md
+# entry -> update every ENFORCED surface manifest in the SAME PR. Unenforced
+# surfaces catch up later and bump their manifest's inventoryVersion when they do.
+#
+# Field reference (all fields required per component):
+#   id       kebab-case stable identifier (never reused/renamed without a bump)
+#   title    human name
+#   purpose  one line: what it is / when it appears
+#   anatomy  named structural parts
+#   states   distinct render states (incl. loading/empty/error/streaming where real)
+#   variants shape/context variants that are the SAME component
+#   behavior semantic notes: what the SDK view-model drives (not styling)
+#   a11y     roles / labels / focus expectations the surface must honor
+#   since    inventory version this component first appeared in
+
+version: 83
+
+components:
+  - id: custom-integration-details
+    title: Custom integration details
+    purpose: Inspect a custom integration and edit its displayed name and brand website without reconnecting.
+    anatomy: [name, icon, status, metadata, edit-action, name-input, website-input, save-action, cancel-action]
+    states: [viewing, editing, saving, invalid-input]
+    variants: [desktop, phone]
+    behavior: Edits preserve the stable integration ID, endpoint and credentials. Host events refresh all observing lists. Declared websites supply their conventional favicon; curated icons retain priority and failed images show an initial.
+    a11y: Labeled fields, dialog focus management, keyboard submission, visible actions and disabled duplicate submission while saving.
+    since: 82
+  - id: agent-avatar
+    title: Agent avatar
+    purpose: Identity badge for an agent -- colored helmet glyph, resting vs running.
+    anatomy: [glyph, color-fill, running-glow-ring]
+    states: [resting, running]
+    variants: [sizes-xs-to-xl, channel-source-avatar]
+    behavior: >-
+      Stored semantic color id resolves to a palette entry (resolveAgentColor);
+      running state is driven by the agent's live run status, not local hover.
+    a11y: Decorative when paired with a text label; else img role with the agent name as label.
+    since: 1
+
+  - id: agent-list-item
+    title: Agent list item
+    purpose: A single agent row/card in the agent list or sidebar.
+    anatomy: [avatar, name, status-chip, unread-or-count-slot, trailing-actions]
+    states: [idle, running, needs-you, unread, selected, focused]
+    variants: [sidebar-rail-collapsed, list-row, grid-card]
+    behavior: >-
+      Selection and run status come from the view-model; the row reflects the
+      agent's aggregate mission state, not a single conversation. The unread
+      state fills the unread-or-count-slot with a small filled action-token dot
+      whenever any of that agent's missions has moved, or somebody typed the
+      reader's name in one, since the reader last opened it. It renders
+      ALONGSIDE the needs-you chip and before it, never instead of it: "there is
+      something new here" and "act now" are different claims and must not
+      collapse into one mark. It is a dot, never a number -- the count lives in
+      the label. Read state is per person and per device, and the signal is
+      multiplayer-only, so single player, the desktop app and any signed-out
+      surface never paint it and reserve no space for it.
+    a11y: >-
+      button/listitem role, name as accessible label, aria-current when
+      selected; the unread dot is an image-role element carrying a text label
+      that states the count ("3 unread updates"), so the signal is never
+      colour/shape alone.
+    since: 1
+
+  - id: conversation-feed
+    title: Conversation feed
+    purpose: The scrolling transcript that hosts every message/tool/system item.
+    anatomy: [scroll-viewport, load-older-trigger, item-list, stick-to-bottom-anchor, scroll-to-bottom-button]
+    states: [empty, loading-history, loading-older, streaming, idle, error]
+    variants: [single-player, multiplayer]
+    behavior: >-
+      Renders an ordered FeedItem stream; auto-sticks to bottom while streaming
+      unless the user scrolled up. Item ordering/merge is view-model driven.
+      Opens on the transcript's TAIL window (v34): when the view-model reports
+      older messages beyond the loaded window, scrolling the top of the feed
+      into view fetches and prepends the previous page (quiet spinner while
+      loading), anchored so on-screen content never jumps; the trigger retires
+      when the window reaches the transcript start.
+    a11y: log role with aria-live=polite for appended items; preserves scroll on prepend.
+    since: 1
+
+  - id: conversation-map-search
+    title: Conversation map search
+    purpose: Search and navigate the messages already loaded in an open conversation.
+    anatomy: [actions-trigger, actions-menu, find-command, search-field, message-map, back-to-latest-action]
+    states: [closed, actions-open, open-unfiltered, filtered, no-results, current-message]
+    variants: [conversation-overlay]
+    behavior: >-
+      The chat header's three-dot menu (leading the panel controls at the
+      right edge, beside the close control) offers Find plus status-aware
+      mission actions. Choosing Find
+      shows the compact conversation map before a query is entered.
+      Filtering is case- and accent-insensitive across every loaded message;
+      selecting a result scrolls to and briefly highlights that message. Delete
+      remains confirmation-gated.
+    a11y: >-
+      The icon trigger, menu actions, and close action have accessible labels;
+      search is a labeled searchbox; results are buttons in a navigation
+      landmark, with aria-current on the message nearest the viewport.
+    since: 56
+
+  - id: assistant-message
+    title: Assistant message
+    purpose: >-
+      A model turn's prose -- bare markdown in single player, an incoming
+      group-chat bubble in a shared conversation.
+    anatomy: [sender-face-column, bubble, sender-name-line, markdown-body, code-block, inline-links, file-chip, copy-action]
+    states: [streaming, complete]
+    variants: [with-code, plain-prose, single-player, multiplayer-attributed, run-continuation]
+    behavior: >-
+      assistant_text vs assistant_text_streaming decide whether the body grows
+      token-by-token; copy acts on the resolved markdown source. In a SHARED
+      conversation (v37) every turn says who spoke; single-player renders no
+      sender at all -- bare left-aligned prose, exactly as before. (v40) In the
+      shared shape the agent is one more member of the group: its turn sits in
+      the same incoming bubble a teammate's does (recessed fill, hairline, 12px
+      corners with the top-left squared toward the sender, compact padding),
+      its 32px mark top-aligned in the face column, its NAME as the bubble's
+      first line, painted in the AGENT'S OWN avatar colour -- chosen per theme
+      by MEASURING that colour against the theme's real chat surface (derived
+      from the design tokens, dark composited through the glass): a palette
+      entry that cannot carry 4.5:1 as text in a theme drops to primary ink in
+      that theme, so a later palette edit can never quietly ship an unreadable
+      name. All seven agent colours pass in both themes today. Mark and name
+      print on the turn that OPENS a run of the agent's turns; a tool/process
+      block between two turns is transparent to that rule (it neither starts
+      nor breaks a run), while a system divider always breaks one.
+      (v54) A WORKSPACE FILE named in the prose is not a link and stops
+      dressing as one. Destination kind, not label shape, picks the affordance:
+      every file renders as one file chip -- the per-extension glyph in its
+      reserved filetype tint on the recessed chip surface, the same mark the
+      Files tab and the turn summary use -- whether the agent wrote
+      `[Perfil](perfil.md)` or `[plan.md](plan.md)`, which previously split
+      across the labeled button pill and the blue autolink chip. No
+      external-link arrow: the file opens in-app. Link blue stays reserved for
+      the web, so the chip now tells the reader whether a click leaves TilinX.
+      (v56) The copy action ships as an action row under the settled bubble,
+      revealed while the row is hovered OR holds keyboard focus (ChatGPT's
+      grammar -- the buttons stay in the DOM and the tab order; a sanctioned
+      exception to the no-hover-gating default, owner decision) with a brief
+      check-mark confirm; streaming turns carry no actions.
+    a11y: article/group role; code blocks keyboard-selectable; copy button labeled. A file chip is a button carrying the file's full path as its title.
+    since: 1
+
+  - id: user-message
+    title: User message
+    purpose: >-
+      A message a person sent -- the viewer's own right-aligned, a teammate's
+      mirrored to the left with their face beside it.
+    anatomy:
+      [
+        sender-face-column,
+        bubble,
+        sender-name-line,
+        attachment-chips,
+        copy-action,
+        edit-action,
+        inline-editor,
+      ]
+    states: [default, with-attachments, editable, editing]
+    variants: [single-player, own-message, teammate-message, run-continuation]
+    behavior: >-
+      The message's stored author drives attribution, and in a SHARED
+      conversation (v37) it is forced on for EVERY turn -- attribution follows
+      the deployment, not the thread's cast. (v40) The anatomy is a group
+      chat's: the viewer's OWN message keeps the right-aligned near-ink bubble
+      with NO face and NO name, because a group chat labels the people you talk
+      to and identifies you by the side you are on; a TEAMMATE's message
+      mirrors to the LEFT as a recessed, hairlined bubble (12px corners, the
+      top-left squared toward the sender's face, compact padding; the own
+      bubble mirrors that geometry when the thread is attributed) with their
+      32px face top-aligned in a fixed avatar column beside it and their name
+      as the bubble's FIRST LINE, small and semibold in that person's stable
+      tone (hashed from their user id, the same tone their avatar wears
+      everywhere else). Face and name print
+      only on the message that OPENS a run from that sender; the rest of the run
+      renders bare with the avatar column still reserved, so consecutive bubbles
+      stay lined up under the face. A change of sender starts a run and a system
+      divider breaks one. Single-player carries no face, no name and no reserved
+      column. Attachment/skill markers are decoded to a clean preview. (v56)
+      The viewer's OWN settled plain-text messages carry an edit action under
+      the bubble while the conversation is idle, in an action row revealed on
+      row hover OR keyboard focus (ChatGPT's grammar; a sanctioned exception
+      to the no-hover-gating default, owner decision). Choosing it swaps the
+      bubble for an IN-PLACE full-width editor card (the message's text,
+      Cancel / Send; Enter sends, Escape cancels; the composer is never
+      touched); Send REWINDS the conversation to that message and continues
+      from the edited version, earlier turns untouched. Marker messages
+      (skill/attachment/interaction answers), channel relays, teammates'
+      rows, and pre-turn-id transcripts are not editable. Settled rows on
+      either side carry a copy action in the same revealed row (verbatim
+      text, brief check-mark confirm); marker-encoded rows are not copyable
+      -- their wire encoding is not what the bubble shows.
+    a11y: >-
+      group role; a teammate's name is visible text inside the bubble, while the
+      viewer's own rows carry the consumer's "you" label as screen-reader-only
+      text, since alignment is a visual-only cue; attachments labeled.
+    since: 1
+
+  - id: thinking-indicator
+    title: Thinking / reasoning indicator
+    purpose: Signals the model is working -- reasoning block or the pre-token wait.
+    anatomy: [helmet-glyph, shimmer-label, collapsible-reasoning-body]
+    states: [submitted-waiting, streaming-thoughts, collapsed, expanded]
+    variants: [typing-bounce-dots, reasoning-collapsible]
+    behavior: >-
+      Shown while a turn is in flight with no visible stream (deriveStatus =
+      submitted); yields to the stream once tokens appear. Reasoning content is
+      thinking / thinking_streaming feed items. The pre-token wait renders as
+      the turn-status line itself (one component, one size) playing the rotating
+      phrase deck; the deck plays ONLY in this connecting state -- an executing
+      agent's header names the concrete task instead (PRODUCT-1226).
+    a11y: aria-live=polite status text; expand/collapse is a labeled toggle button.
+    since: 1
+
+  - id: tool-call-chip
+    title: Tool call chip
+    purpose: Collapsible display of one tool invocation and its result.
+    anatomy: [tool-icon, action-label, chevron, collapsible-output, result-status]
+    states: [running, success, error, collapsed, expanded]
+    variants: [default-auto-collapse, bash-collapsed-by-default]
+    behavior: >-
+      Auto-opens while running, auto-collapses shortly after the result; Bash
+      stays collapsed. Label derives from tool name + input via tool-labels.
+    a11y: toggle button with tool action as label; error state announced.
+    since: 1
+
+  - id: provider-error-card
+    title: Provider error card
+    purpose: Actionable card for a provider failure in the feed (auth, quota, rate-limit).
+    anatomy: [icon-bubble, title, reason, primary-action, secondary-action]
+    states: [unauthenticated, quota-exhausted, rate-limited, model-unavailable, context-overflow, transient]
+    variants: [single-action-row-card, multi-action-error-card]
+    behavior: >-
+      provider_error feed items carry a typed ProviderError (cause/scope). The
+      card maps each taxonomy variant to its reconnect/upgrade/retry affordance.
+    a11y: alert role; each action a labeled button; status-page link where relevant.
+    since: 1
+
+  - id: agent-provisioning-card
+    title: Agent provisioning card
+    purpose: >-
+      In-chat notice under a sent message while a just-created agent's hosted
+      engine is still warming up, so the wait reads as expected, not broken.
+    anatomy: [spinner, title, body]
+    states: [default, disabled]
+    variants: [chat-card, blocked-write-dialog]
+    behavior: >-
+      Driven by the client-side provisioning presence map: marked on hosted
+      agent create, cleared by a readiness long-poll against the agent's
+      engine. The chat-card sits under the user's sent (queued) message; the
+      blocked-write-dialog opens when a write is attempted while warming —
+      reads stay free (tabs render with empty data). Queued sends deliver on
+      ready; both surfaces dismiss themselves.
+    a11y: status role; spinner decorative, text carries the message.
+    since: 3
+
+  - id: system-message
+    title: System message / boundary
+    purpose: Non-message feed events -- system notes and context/provider boundaries.
+    anatomy: [divider-rule, centered-italic-label]
+    states: [system-note, context-compacted, provider-switched, context-cleared]
+    variants: [plain-note, divider-boundary]
+    behavior: >-
+      system_message renders a centered note; context_compacted,
+      provider_switched and context_cleared render subtle dividers that keep the
+      full chat visible. A compaction divider names whether the user asked for
+      it; the cleared divider says the agent starts fresh and keeps what it
+      remembers, since the chat above it stays on screen.
+    a11y: separator role for boundaries; note text exposed to the a11y tree.
+    since: 1
+
+  - id: skill-invocation-message
+    title: Skill invocation message
+    purpose: Shows that the user ran a Skill, as a decoded card in the feed.
+    anatomy: [skill-image, skill-title, field-summary]
+    states: [default]
+    variants: [with-image, initial-fallback]
+    behavior: >-
+      A user-message marker (decodeSkillMessage) is decoded to a structured
+      payload so every surface renders the same card instead of the raw marker.
+    a11y: group role labeled with the skill name; image is decorative.
+    since: 1
+
+  - id: composer
+    title: Composer
+    purpose: The signature message-input surface -- text, attachments, send/stop.
+    anatomy: [leading-attach, textarea, footer-slot, queued-list, trailing-send-stop]
+    states: [ready, submitted, streaming, has-attachments, drag-over, disabled, replaced-by-override]
+    variants: [single-line, multiline-expanded, phone]
+    behavior: >-
+      Send is gated on non-empty text/attachments; while streaming the trailing
+      button becomes Stop. Queued messages show when sending mid-turn. A host
+      surface may pass an override card that renders above the input (default)
+      or replaces it outright while present (replaced-by-override) when that
+      card is the only intended action, e.g. onboarding's one-button offer.
+      The footer slot's pickers (mode, model, effort, context) sit in ONE row
+      at both breakpoints. Below the one breakpoint (phone) the row keeps
+      only its two named pills (mode, model) plus the effort gauge and the
+      context ring; Skills moves into the attach menu; each picker opens as a
+      bottom sheet rather than an anchored popover, and the context ring
+      opens on tap (a hover card never does on touch). The composer stays
+      tight to the keyboard: nothing but the safe area (or the keyboard's own
+      inset) sits below its row, and opening a chat never focuses the
+      textarea on the phone. Under the attach menu's file entries, behind a
+      rule, sit the conversation commands (compact context, clear context);
+      they send the command as an ordinary message and are inert while the
+      chat is empty or a turn is running.
+    a11y: labeled textarea; send/stop button state-labeled; drop zone announced; phone pickers are titled dialogs.
+    since: 1
+
+  - id: mention-autocomplete
+    title: Mention autocomplete
+    purpose: The teammate picker the composer raises when the writer types "@" in a shared chat.
+    anatomy: [popover-surface, person-row, person-face, person-name]
+    states: [closed, open-filtering, open-empty-closes, keyboard-highlighted]
+    variants: [pointer-select, keyboard-select]
+    behavior: >-
+      Opens on an "@" that starts a word and filters the space's co-member
+      directory as the writer types (case- and accent-insensitive, self
+      excluded). Accepting inserts the plain text "@Name" and records the
+      person on the send's structured mention list, so the model reads prose
+      while the wire carries identities. Arrow keys move the highlight, Enter
+      or Tab accepts, Escape closes. With no roster (single player, personal
+      space, or a host without the directory) it never opens and "@" is just
+      a character.
+    a11y: listbox/option roles; the highlighted option is announced; the textarea keeps focus throughout.
+    since: 38
+
+  - id: mention-chip
+    title: Mention chip
+    purpose: An "@Name" inside a message, rendered as a person pill instead of raw text.
+    anatomy: [pill, at-sign, person-name]
+    states: [default, self-mention]
+    variants: [in-user-bubble, in-agent-prose]
+    behavior: >-
+      A human message chips the mentions stored on the message itself; agent
+      prose is matched against the known people of the space, since an agent
+      writes names as plain text. A mention of the reader is emphasized so
+      being asked for something stands out. Chips never render inside code.
+    a11y: Decorative styling only -- the chip keeps the literal "@Name" text in the reading order.
+    since: 38
+
+  - id: turn-status
+    title: Turn status line
+    purpose: The helmet + muted label line reporting the current turn state.
+    anatomy: [helmet-glyph, status-label, shimmer]
+    states: [idle, active-shimmer]
+    variants: [inline-in-feed, standalone-on-card]
+    behavior: >-
+      Label + active flag come from deriveStatus over the feed; shimmer marks an
+      ongoing/pending state. Inline-safe so it can sit inside markdown prose.
+      While the agent executes, the label holds the current task (tool verb /
+      integration brand), folding a run of consecutive identical activities
+      into one label with an "xN" repeat counter (PRODUCT-1226).
+    a11y: status role; label announced politely; shimmer is presentational only.
+    since: 1
+
+  - id: progress-panel
+    title: Progress panel
+    purpose: Agent-declared step checklist for a running mission.
+    anatomy: [header-count, step-row, step-status-icon]
+    states: [pending, active, done, empty]
+    variants: [side-panel, sidebar-card]
+    behavior: >-
+      Steps come from the agent's update_progress calls (or are derived from
+      tool activity); header shows "X of Y complete".
+    a11y: list role; each step's status conveyed as text, not color alone.
+    since: 1
+
+  - id: approval-surface
+    title: Approval / needs-you surface
+    purpose: Where a mission awaiting the user is reviewed and approved.
+    anatomy: [item-title, status-indicator, deliverable-preview, approve-action, feedback-input]
+    states: [needs-you, running, approved, error, empty]
+    variants: [list-item, detail-panel]
+    behavior: >-
+      needs_you items are surfaced for the user to review; approve advances the
+      mission, feedback returns it to the agent. Status drives the indicator.
+    a11y: needs-you item announced; approve is a labeled primary button; live status.
+    since: 1
+
+  - id: interaction-card
+    title: Interaction card
+    purpose: In-chat surface shown when the agent pauses mid-turn to gather what it needs before continuing; a stepper that walks the user through one step at a time (questions, then sign-in, then connections, then action approvals), replacing the composer while pending.
+    anatomy: [modal-shell, modal-header, step-title, step-title-icon, pager, collapse-chevron, dismiss-action, bounded-scroll-body, option-row, number-badge, recommended-chip, selected-arrow, free-text-escape-field, pencil-adornment, footer-row, unified-decline, decline-esc-hint, step-cta, return-key-glyph, trailing-free-text-row, app-logo, integration-name, reason-line, explainer-line, connected-check, waiting-note]
+    states: [single-step, multi-step, collapsed, with-options, single-option, recommended-option, free-text-only, signin-step, connect-step, connecting, connected, skipped, revisited, reconsider, abandoned, disabled]
+    variants: [choice, open-ended, signin, connect, mixed-sequence]
+    behavior: >-
+      Rendered from the turn's pending interaction (steps[]: 1-3 question steps,
+      then at most one signin step, then connect steps, then approval steps —
+      approvals land LAST, since approving an action happens after its toolkit is
+      connected; the approval step's body is its own component,
+      interaction-approval-card, injected via a `renderApproval` prop the way
+      signin/connect bodies are). Every step is composed in
+      ONE shared modal shell (InteractionModal) that owns the chrome — a white
+      card with a hairline border and roomy padding (the reference "Coworker card"
+      look; a card-surface same colour as the page, set apart by border + soft
+      shadow, theme-aware tokens keep dark mode sane), a HEADER row, a body that
+      fades on step swap, and a right-aligned FOOTER row. Only its body is bounded
+      to 40vh and scrolls; the footer and trailing free-text row stay fixed. A
+      visible-at-rest header chevron collapses it to the title, pager, muted
+      one-line step hint, and expand control without muting the blocked state;
+      the chevron remains usable while the rest of the card is disabled, so the question
+      stepper, the sign-in step, and the connect step are structurally identical
+      and differ only in the title / body / footer nodes they hand in. Shows ONE
+      step at a time. Weight is restrained across the whole family: color tone
+      (foreground vs muted) carries the hierarchy — the modal title and the option
+      / identity labels are REGULAR weight, never bold; the only font-medium left
+      is the Recommended chip, the number badge digit, and the filled CTA label.
+      Header: the step TITLE left (a question's text, or a signin/connect step's
+      '(icon) ACTION' identity lockup — the real brand logo beside the explicit
+      connect action, "Connect Google Sheets" (or the integration NAME,
+      "TilinX", for sign-in) with, top-RIGHT on the same row, a
+      compact "N of M" pager whose chevrons ARE the Back/Forward navigation
+      (hidden for a single-step sequence) plus a dismiss X that abandons the WHOLE
+      sequence. This '(icon) ACTION/NAME' header title is the family convention for ANY
+      card carrying an app/brand icon (the action-approval card adopts it too;
+      suggest-reusable and plan-ready have no app icon and keep their own
+      headers). The card replaces the composer while the sequence is pending;
+      dismissing restores it. Dismissing (the X) is a user
+      INTERRUPTION, not an answer: it persists a durable `stopped` marker on the
+      turn AND clears the pending interaction, so the sequence retires and the
+      MODEL LEARNS NOTHING from the abandonment (a reload renders the standard
+      "Stopped by user" line, never the card again — live and reload settle
+      identically); the mid-turn race is refused (409). Question step: single-select option rows (role=radio)
+      each carry a LEFT circular number badge (the digit is the keyboard shortcut
+      — pressing it selects the row whenever focus is not in a text field), a
+      regular-weight label, and an optional soft "Recommended" chip (at most one
+      option). The option's wire `description` is TOLERATED but NOT rendered — the
+      label + chip say enough. The row surface is transparent until hover/selected,
+      when it fills a soft grey and reveals a trailing arrow; clicking answers and
+      advances. Below the option rows is the free-text ESCAPE FIELD — an honest
+      input: a hairline field border (the design system's border-input/bg-transparent
+      vocabulary, shared with the composer and every Input), a text cursor over its
+      whole surface, and a border-ring focus state, so its resting look promises
+      the text input it becomes. A pencil adornment sits at left and a placeholder
+      ("None of these..." when options are present, else a neutral answer prompt);
+      clicking anywhere in the field focuses it, typing expands it and Enter
+      submits. The card-wide decline is NOT in this field — it lives in the
+      FOOTER. Every step kind shares ONE unified decline word ("Not now") + Esc
+      keycap hint in the footer: a question's footer is that decline ALONE (no
+      primary CTA — clicking an option is the advance), while a signin/connect
+      footer places it beside the single filled CTA pill ("Connect" / "Sign in",
+      with a return-key glyph). The connect, sign-in, and credential free-text
+      alternate-instruction row follows that footer, keeping the required action
+      above the redirect path. Skip/decline advances past ANY step kind without
+      completing it — a skipped question is omitted from the composed reply, while
+      a skipped signin/connect is a recorded fact the reply states ("Skipped
+      connecting {app}." / "Skipped signing in.") so the agent hears the decline
+      instead of re-requesting. Esc declines on every kind (Enter also fires the
+      CTA on signin/connect); a capture-phase handler pre-empts the global
+      Escape-closes-the-panel shortcut when it acts, and yields to the composer
+      while a field has focus. Navigation is the header pager for every kind, so
+      the body carries no nav button: ui/chat (auth/Composio-unaware) owns the
+      shell, the pager, and the callbacks (StepFooterApi { revisited, onSkip } +
+      StepChrome { pager, onDismiss, dismissLabel, disabled }); the app owns the
+      reactive signin/connect body + CTA, rendering its own InteractionModal wired
+      with that chrome. While an OAuth hand-off is in flight the CTA shows a
+      connecting spinner and a quiet muted line reminds the user their browser is
+      waiting; an already-connected app swaps its reason body for a calm check
+      + "Connected" and self-reports to advance (live frontier only). "Not now"
+      travels WITH the CTA: the decline affordance is present wherever the CTA is
+      (frontier AND a reconsidered skip), so no step is ever a dead end with only
+      a Connect/Sign in button. Revisiting an already-reached signin/connect step
+      (walked back via the pager) splits by its FINAL state: a COMPLETED step
+      shows the calm connected/signed-in state with NO footer (the pager's forward
+      chevron is the only way onward, since its card cannot re-fire completion); a
+      SKIPPED step is still actionable, so its CTA (and its paired "Not now")
+      return — letting the user RECONSIDER and connect / sign in after all, or
+      decline again (the pager forward "keeps it skipped"). Revisiting a question
+      pre-selects its prior answer (soft-grey fill); re-answering replaces it. A
+      single question-with-options step keeps the one-tap feel (click = answer =
+      complete). After the last step, emits each answered question in step order;
+      the consumer encodes the structured interaction-answers message, appending
+      the signed-in/connected status lines and the skipped-step facts derived
+      from each step's FINAL outcome — a step skipped then reconsidered reports
+      "Connected {app}." (never a stale "Skipped connecting {app}."), and no step
+      is named twice. Disabled while another turn is active.
+    a11y: one step announced at a time, its question read as the modal title; option rows are role=radio in a radiogroup, keyboard-selectable by the left number badge's position digit and visible at rest (no hover gate), showing label + optional Recommended chip only (no description); the free-text escape field (a bordered text input with a leading pencil adornment, no embedded control) is always present on question steps and follows the fixed footer on signin/connect/credential steps; the pager's Back/Forward chevrons, collapse chevron, and dismiss X are labeled icon buttons; collapsed cards retain one muted, truncated context line; the footer's unified decline is a labeled button with an Esc keycap hint on every kind, and signin/connect add a labeled filled CTA (Enter fires it, Esc declines). While collapsed, step shortcuts are inert; while a turn runs, every action except the collapse chevron is disabled. The "N of M" pager copy is visible text.
+    since: 4
+
+  - id: interaction-approval-card
+    title: Interaction approval card
+    purpose: The approval STEP inside the interaction stepper, shown when an integration action needs the user's go-ahead before it runs; asks "Allow {app} to {action}?" and records allow-once / always-allow / deny.
+    anatomy: [app-logo, integration-name, permission-question, decided-state, footer-row, always-allow, deny, allow-once, return-key-glyph, decline-esc-hint]
+    states: [frontier, decided-allowed, decided-denied, revisited, disabled]
+    variants: [approval]
+    behavior: >-
+      An `approval` step (protocol `InteractionStep` kind=approval: `{toolkit,
+      action, params, paramsHash}`) rides the SAME shared InteractionModal shell
+      as the signin/connect steps (member of the interaction-card family,
+      inventory v20). The host mints it: the sandbox execute route gates an
+      integration `execute` and answers 409 `approval_required` with a
+      display-ready payload; the runtime records the step on the turn holder
+      (`recordApproval`, deduped by paramsHash, ids a1..aN, approvals LAST) and
+      returns queued-pending text rather than an error. The app supplies the body
+      via ui/chat's `renderApproval` prop (ui/chat stays Composio-unaware, exactly
+      like renderConnect/renderSignin). The modal TITLE is the '(icon) NAME'
+      identity lockup (real brand logo beside the integration name, REGULAR
+      weight); the body is deliberately NON-technical (v27): JUST the permission
+      question in foreground tone ("Allow {app} to {action}?") — the tool's raw
+      params are received on the wire but NEVER rendered (the target user is
+      non-technical; the approval still covers the exact call via paramsHash).
+      THREE decisions from the FOOTER: Always allow
+      (outline, pushed LEFT), Deny (outline, Esc), Allow once (filled, Enter,
+      return-key glyph). Unlike a connect/signin "Not now" (which merely defers),
+      Deny is a real decision the model is TOLD about: resolution writes the store
+      (allow-once → a one-shot ticket POST keyed by paramsHash; always-allow →
+      the always-allow POST) then advances, and the composed reply names the RAW
+      action slug ("Approved: go ahead with {ACTION}." / "I chose not to allow
+      {ACTION}. Do not retry it; continue without it.") so the model can re-issue
+      the EXACT call. Enter=allow-once / Esc=deny run capture-phase and are inert
+      while a text field has focus (the real composer keeps its keys) and once the
+      step is decided or disabled. The header X is NOT a Deny — it interrupts the
+      WHOLE sequence (see interaction-card's dismiss semantics). A REVISITED
+      already-decided step shows the calm decided state (check + "Allowed", or a
+      muted "Denied") with NO footer; the pager's forward chevron is onward.
+      Autopilot AUTO-APPROVES the gate (the runtime forwards `x-tilinx-turn-mode:
+      auto`), so this card never appears on an auto turn.
+    a11y: the permission question reads as the prominent line under the app-identity title; the three decisions are labeled footer buttons (Deny carries an Esc keycap hint, Allow once a return-key glyph); a revisited decided step exposes its outcome as text (no color-only), no footer.
+    since: 21
+
+  - id: plan-ready-card
+    title: Plan-ready card
+    purpose: In-chat surface shown when the agent finishes planning (plan mode) and calls plan_ready; presents an optional compact approval lede and two ways forward, while the complete plan remains in the transcript.
+    anatomy: [modal-shell, title, collapse-chevron, dismiss-x, optional-clamped-plan-lede, coworker-row, autopilot-row, trailing-feedback-row]
+    states: [default, collapsed, disabled]
+    variants: [default]
+    behavior: >-
+      Rendered from a pending interaction carrying a single plan_ready step
+      (summary), exactly like ask_user reaches the frontend. The complete plan
+      is the assistant's preceding transcript message; a non-empty summary
+      clamps to two lines as a lede above two always-visible option rows built in the composer mode
+      menu's idiom: each a full-width row with its icon inline with the title
+      (Handshake / Rocket, matching the mode selector) and a
+      one-line description below, rounded-xl hover background, nothing
+      hover-gated. "Continue in Coworker mode" starts a normal (execute) turn
+      confirming the plan; "Continue in Autopilot mode" starts an autopilot
+      (auto) turn; both flip the composer Mode pill to match and send a visible
+      user message. The header dismiss X dismisses the card LOCALLY (the composer
+      returns, mode stays plan) without sending; a later, different plan
+      re-shows the card. Primary emphasis comes from row order + title weight,
+      not a filled button. The shared InteractionModal shell bounds the expanded
+      body to 40vh with scrolling and has a visible-at-rest chevron that collapses
+      the card to its title, optional muted summary hint, and expand control. An
+      empty backstop summary renders no lede or collapsed hint, leaving the
+      title to carry the collapsed state. Its fixed
+      trailing feedback row is the only text input on screen, labeled "Give feedback on the plan...": typing an
+      instruction sends a visible plan-mode user follow-up and retires the card.
+      Disabled gates the rows and free-text input while the chevron remains
+      available for reading the transcript.
+    a11y: title, then the clamped plan lede when a summary is present, read in order; the labeled collapse and expand controls plus labeled dismiss X are visible at rest; two labeled row buttons and the shared feedback input are keyboard-reachable; each row has a foreground-color icon inline with its title; disabled state marks the surface aria-disabled and gates every action.
+    since: 9
+
+  - id: suggest-reusable-card
+    title: Suggest-reusable card
+    purpose: In-chat offer shown when the agent finishes a mission cleanly and, in its end-of-task reflection step, calls suggest_reusable; proposes saving the just-completed work as a reusable Skill, a scheduled Routine, or a Learning to remember, floating above the always-mounted composer.
+    anatomy: [eyebrow, proposed-title, rationale, save-row, not-now-row]
+    states: [default, disabled]
+    variants: [skill, routine, learning]
+    behavior: >-
+      Rendered from a pending interaction carrying a single suggest_reusable
+      step (reusableKind, title, rationale) on the terminal done frame. Unlike
+      every other interaction step, a lone suggest_reusable step keeps the
+      mission's board status at done (the offer is optional, nothing is
+      waiting). Shows the eyebrow, the model-proposed name prominently, and the
+      model's one-line rationale, then two full-width rows in the plan-ready
+      card's idiom: Save (Sparkles icon for a Skill, CalendarClock for a
+      Routine, Lightbulb for a Learning; label names the kind) sends a
+      follow-up message asking the agent to actually write the
+      Skill/Routine/Learning, always as an execute turn regardless of the
+      composer's pinned mode, dismissing the offer locally first; "Not now"
+      dismisses locally. Typing in the composer instead abandons it like any
+      interaction card. Dismissal is per-offer (step id) and per conversation.
+    a11y: eyebrow then title then rationale read in order; two labeled row buttons visible at rest (no hover gate), keyboard-reachable; disabled marks the surface aria-disabled and gates both rows.
+    since: 12
+
+  - id: suggest-actions
+    title: Suggested action bubbles
+    purpose: Optional clickable next steps shown above the composer after a mission finishes cleanly.
+    anatomy: [heading, horizontal-pill-scroller, dismiss]
+    states: [default]
+    variants: [actions-only, actions-with-reusable]
+    behavior: >-
+      A suggest_actions interaction step carries two to four concrete actions,
+      each with a short label and the visible user message sent on click. It
+      rides the terminal done frame and keeps the mission done, never
+      needs_you. Dismiss hides the bubbles and clears the persisted offer;
+      clicking an action starts its follow-up turn. It may appear before the
+      optional suggest-reusable card on the same clean-finish frame.
+    a11y: heading and all pill buttons are visible at rest, keyboard reachable, and the dismiss control has an accessible label.
+    since: 43
+
+  - id: chat-mission-list
+    title: Child mission drawer
+    purpose: The missions a chat started, in a collapsible drawer above its composer so a coordinating mission is also its own monitor.
+    anatomy: [title-toggle, count, toggle-chevron, mission-row, status-dot, status-label, open-chevron]
+    states: [open, collapsed, scrolling]
+    variants: [alone, above-suggest-reusable]
+    behavior: >-
+      A mission the agent started with start_mission carries the parent chat's
+      conversation id, so the parent lists its children with each one's live
+      board status (running, awaiting review, done). Rows are controls: opening
+      one selects that mission's own chat, exactly as clicking its board card
+      would. The list stands in for the suggested-action bubbles on the same
+      clean-finish frame, since reviewing what the chat started is the concrete
+      next step; a blocking interaction still wins the composer. The drawer is
+      open by default and its title toggles it: collapsed, only the title row
+      with the count remains. Archived children drop off as they do on the
+      board, and the open list is bounded so a wide fan-out scrolls instead of
+      pushing the composer away.
+    a11y: the title toggle carries aria-expanded/aria-controls; every row is a button with a visible label and status at rest, keyboard reachable with a visible focus ring; the status dot is decorative and its meaning is duplicated in text.
+    since: 59
+
+  - id: chat-parent-mission-link
+    title: Parent mission link
+    purpose: On a mission the agent started, one bar above the composer linking back to the chat that started it.
+    anatomy: [back-glyph, label, parent-title]
+    states: [default]
+    variants: [with-title, label-only]
+    behavior: >-
+      The child-side twin of the child-mission drawer, and mutually exclusive
+      with it (spawned missions cannot spawn). Rendered only when the open
+      chat carries the agent-started origin marker AND the parent mission is
+      still on the active board — an archived or deleted parent renders
+      nothing, never a dead link. Opening it selects the parent mission's own
+      chat, exactly as clicking its board card would. A blocking interaction
+      still wins the composer slot.
+    a11y: a single button with a visible text label at rest, keyboard reachable with a visible focus ring; the glyph is decorative.
+    since: 61
+
+  - id: interaction-answers-message
+    title: Interaction answers message
+    purpose: The structured user-message bubble a completed question sequence sends; shows each question with its answer instead of a flat "question - answer" text blob.
+    anatomy: [bubble-frame, question-line, answer-line, pair-divider]
+    states: [default, single-pair]
+    variants: [questions-only, mixed-with-confirmations]
+    behavior: >-
+      A completed interaction card encodes its answers as a marker-prefixed
+      user message (tilinx:interaction-answers) whose plain-text body is what
+      the model reads, byte-identical to the pre-existing flat reply. The
+      renderer decodes the marker and shows an ordered receipt inside one
+      user-side bubble: each answered question as a small muted label with the
+      user's answer directly below, successive pairs separated by a hairline
+      divider for an even rhythm (a lone pair renders as a compact receipt
+      with no divider); confirmation lines with no question (a connected app,
+      a sign-in) render as a lone value line. Skipped questions emit no line.
+      Malformed or empty payloads fall through to the plain-text bubble;
+      connect/signin-only sequences stay hidden auto-continue messages and
+      never render this bubble. Deliberately quieter than the interaction
+      card, matching the user-bubble family.
+    a11y: reads in document order as question-then-answer pairs; pass-through content only, no interactive elements, no hover-gated information.
+    since: 12
+
+  - id: deliverable-card
+    title: Deliverable card
+    purpose: A rendered mission deliverable (markdown output) for review.
+    anatomy: [card-frame, markdown-body]
+    states: [default]
+    variants: [deliverable, user-feedback-bubble]
+    behavior: Renders the deliverable markdown; feedback variant echoes the user's reply.
+    a11y: article role; headings preserved from source markdown.
+    since: 1
+
+  - id: mission-card
+    title: Mission card
+    purpose: A board card representing one mission/conversation.
+    anatomy:
+      [
+        avatar,
+        title,
+        status-chip,
+        actions,
+        drag-handle,
+        select-checkbox,
+        people-face-stack,
+        people-overflow-chip,
+      ]
+    states:
+      [
+        resting,
+        running,
+        needs-you,
+        error,
+        selected,
+        focused,
+        dragging,
+        attributed,
+      ]
+    variants: [board-card, archived-list-row]
+    behavior: >-
+      Running state shows the comet glow. The card carries at most ONE
+      status-gated primary action, decided by the column it sits in and offered
+      at full resting weight (never hover-gated): a Needs-you card gets the
+      checkmark that moves it to done, a Done card gets the box that archives
+      it. The two status sets are disjoint, so the pair never competes for the
+      same card, and a running card offers neither -- nothing to sign off yet,
+      nothing to file away. Archiving takes the mission off the active board
+      (it is the only status with no column), so a card archived while its chat
+      is open closes that panel, exactly as a delete or a bulk archive does; it
+      is not destructive and never celebrates. Drag/multi-select
+      are surface-capability gated (pointer drag on desktop). The people face stack
+      is the multi-contributor signal: every human on the mission, creator first,
+      as overlapping ringed avatars over the card body's bottom-right corner
+      (photo when known, otherwise initials on an opaque desaturated person tone
+      picked deterministically from the person's id, so one person keeps one tone
+      everywhere). Past five faces the rest collapse into a solid "+N" chip that
+      expands to the full roster, and the card body reserves a right gutter sized
+      to the stack so no text ever runs underneath it. Server-stamped attribution
+      only (multiplayer); an unattributed card renders exactly as before. The
+      open chat's header carries the same stack on the LEFT, beside the agent's
+      name and task line and apart from the panel controls, as a button that
+      opens the full roster; it is absent while nobody but the viewer is on
+      the task, so a solo chat never shows your own face as a dead control.
+    a11y: >-
+      article/button role; title as label; checkbox labeled; status not
+      color-only; each action button is a >=24px hit box whose icon-only glyph
+      carries an accessible label naming what it does, so approve and archive
+      are told apart by name, not shape; the face stack is a labeled group, each face names its person
+      (tooltip + title) and the "+N" chip is a labeled control, so no contributor
+      is reachable by hover alone; in the chat header the whole stack is one
+      labeled button, so it works by touch.
+    since: 1
+
+  - id: mission-board
+    title: Mission board
+    purpose: The columned board that groups mission cards by status.
+    anatomy:
+      [
+        column,
+        column-header,
+        card-list,
+        empty-column-state,
+        bulk-action-bar,
+        mentions-pill,
+      ]
+    states: [populated, empty, loading, dragging]
+    variants: [multi-column-board, single-column-list]
+    behavior: >-
+      Columns map to mission statuses; cards move between columns on approve/drag.
+      Bulk-action bar appears when cards are multi-selected.
+      The mentions pill is the toolbar control that swaps the board for the
+      mentions-inbox mode: an at-sign pill sitting beside the archived pill,
+      highlighted while that mode is showing, collapsing to its icon alone when
+      a chat panel narrows the board, and carrying the number of outstanding
+      mentions -- a mention of the reader newer than their read cursor, not
+      ambient mission movement -- clamped to "99+". Multiplayer only: single
+      player gets no mentions chrome at all.
+      The board is DESKTOP-ONLY. Below the one breakpoint it is not squeezed,
+      paged or hidden -- it is replaced by the team-screen's phone task list,
+      a single scrolling list of the same missions grouped by the same
+      sections. Columns, drag-and-drop, multi-select and the side panel have
+      no phone form at all, and there a task opens as a pushed
+      mission-chat-screen rather than a selection.
+    a11y: >-
+      list/grid semantics per column; column headers labeled; DnD has
+      non-pointer fallback; the mentions pill names its mode and repeats its
+      outstanding count in its accessible name, so the number is never
+      visual-only.
+    since: 1
+
+  - id: mentions-inbox
+    title: Mentions inbox
+    purpose: >-
+      Mission Control's multiplayer-only mode listing every mission where a
+      teammate typed the reader's name.
+    anatomy:
+      [
+        row-list,
+        mention-row,
+        unread-dot,
+        mentioner-face,
+        mission-title,
+        mentioner-line,
+        relative-time,
+        empty-state,
+      ]
+    states: [loading, populated, empty, unread-row]
+    variants: [with-mentioner-face, unattributed-mention]
+    behavior: >-
+      A plain scrollable list, deliberately NOT a board: there are no columns to
+      move a mention between and no status to read off one, only who pinged the
+      reader, where, and how long ago. One row per mission that mentions the
+      reader, newest mention first, with a deterministic tiebreak so the list
+      never reshuffles under a click. A row carries the mentioner's face, the
+      line "<Name> mentioned you in <Agent>", the mission title and the age of
+      the mention; opening it navigates to that mission's chat exactly as a
+      completion notification does. A mention whose author is unknown drops the
+      face for an at-sign glyph and says only that the reader was mentioned. A
+      row with something new since the reader last opened that mission carries
+      the same quiet action-token dot the agent sidebar uses, on a rail that is
+      always reserved so read and unread rows stay aligned. With
+      nobody mentioning the reader the list shows its empty state; with nobody
+      signed in there is no "me" to mention, and the mode is never routed to.
+    a11y: >-
+      list/listitem semantics; each row is a button whose accessible name is its
+      visible text (mission title, the "mentioned you in" line, the relative
+      time); the mentioner's name is that text, never the face alone, which is
+      decorative; the unread dot is presentational, since a row's presence in
+      the inbox is already the claim on attention.
+    since: 39
+
+  - id: mission-status-chip
+    title: Mission status chip
+    purpose: The shared status token (running / needs-you / done / error) used across surfaces.
+    anatomy: [status-dot-or-icon, status-label]
+    states: [running, needs-you, done, error, cancelled]
+    variants: [dot-only, dot-with-label, badge]
+    behavior: >-
+      One canonical mapping from a mission RunStatus to indicator + label, reused
+      by board cards, the approval list, and conversation rows.
+    a11y: status conveyed as text/label, never color alone; running is announced.
+    since: 1
+
+  - id: routine-row
+    title: Routine row
+    purpose: >-
+      A routine in the routines list -- schedule summary + next run (cron), or
+      event summary + trigger status (event-driven).
+    anatomy:
+      [
+        status-icon,
+        name,
+        schedule-or-event-summary,
+        trigger-status-badge,
+        next-fire,
+        enabled-toggle,
+        quick-actions-menu,
+        owner-chip,
+        connection-warning-chip,
+      ]
+    states:
+      [
+        enabled,
+        disabled,
+        running,
+        paused,
+        last-run-failed,
+        renaming,
+        trigger-active,
+        trigger-pending,
+        trigger-paused,
+        trigger-error,
+        provider-unusable,
+      ]
+    variants:
+      [list-row, grid-card, schedule-driven, event-driven, cross-agent]
+    behavior: >-
+      Shows a humanized schedule summary + next fire time (cron routine) or a
+      humanized event summary + live provisioning status badge (event-driven:
+      active / pending / paused-disconnected / paused-revoked / error, with a
+      one-click reconnect on a disconnected account). The toggle enables/disables
+      the routine; the leading status icon reflects the live run state. The
+      quick-actions menu renames inline and deletes behind a confirm dialog.
+      The inline edit panel authors the wake mechanism: where the deployment
+      supports event triggers it offers a plain-language "When should this
+      happen?" choice (schedule / app event); otherwise it is schedule-only.
+      In a CROSS-AGENT list (a team's Routines) the row carries an owner chip
+      beside its name -- the owning agent's avatar + name, supplied by the
+      surface. The chip never truncates; the routine's name does. A DRAFT row (a
+      routine still being built in chat) wears the same chip, or several
+      identical "being created" rows would be indistinguishable. A single-agent
+      list omits both, since every row would name the same owner.
+      A row also carries a WARNING chip when the AI account the routine would
+      run on is unusable -- not connected, needing a reconnect, or out of
+      credits -- so a broken automation is visible in the list rather than only
+      after it fails. The chip is supplied by the surface (the library owns no
+      provider state) and is absent for a healthy account, for an unconfirmed
+      probe, and for a routine created by someone else, whose account the viewer
+      cannot answer for.
+    a11y: >-
+      listitem role; toggle labeled with the routine name; next-run/status as
+      text; status never color-alone (icon shape + row text carry it); menu
+      trigger always visible with an accessible label.
+    since: 1
+
+  - id: routine-details
+    title: Routine screen
+    purpose: >-
+      A routine's own page (PRODUCT-1208), REPLACING the routines list in the
+      main content when its row is clicked -- never a side panel, never a
+      popover: the routine's name, an editable description (the prompt IS what
+      the routine does), an editable run frequency, the model it runs on, and
+      its execution history behind a Runs modal, n8n-style.
+    anatomy:
+      [
+        back-action,
+        title,
+        runs-action,
+        open-chat-action,
+        editable-prompt,
+        schedule-editor,
+        model-row,
+        connection-health-badge,
+        runs-modal,
+      ]
+    states:
+      [
+        viewing,
+        editing-prompt,
+        editing-schedule,
+        loading-runs,
+        no-runs-yet,
+        provider-connected,
+        provider-unusable,
+        provider-checking,
+      ]
+    variants: [full-screen]
+    behavior: >-
+      The row click lands here (never straight in a chat); Back or Escape
+      returns to the list. The description is the prompt in a plain textarea
+      -- Save/Cancel appear when edited and Save persists it. The frequency
+      shows the humanized cron with the SAME schedule-builder editor the rows
+      use (plus the next fire time), or a trigger's plain-language event with
+      its live activation chip (event bindings change via chat, not here).
+      The model row ALWAYS names the resolved pair -- provider + model, e.g.
+      "Claude - Opus 5" -- whether the routine is pinned or follows the agent;
+      an unpinned routine adds a quiet line saying so. Picking pins it (the fire
+      path honors the pin), a reset row returns to following the agent --
+      clamped to the agent's allowed-models ceiling in Teams. Beside it, a
+      status badge says whether that AI account is usable BEFORE any run
+      (connected / not connected / needs reconnect / out of credits /
+      checking), with an inline connect action on the two states connecting can
+      fix. The badge is only shown for a routine the viewer created: a fired
+      routine runs on its CREATOR's account, and the viewer's own connection
+      answer describes a different one -- a routine someone else created gets a
+      plain line saying it runs on the creator's account instead. "Runs" opens the execution history as a MODAL: every recorded
+      run newest-first with its plain-language outcome (running / done /
+      nothing to report / failed / stopped), date + time, elapsed time, and
+      -- when the run wasn't silent -- the result it left behind, or, for a run
+      that never reached the agent, the reason its AI account could not run it;
+      clicking an entry closes the modal and opens that run's chat in the shell panel
+      (closing the chat returns to this screen). "Open chat" reaches the
+      routine's setup chat the same way.
+    a11y: >-
+      the screen title and sections are real headings; the prompt textarea is
+      labeled; run rows are buttons whose accessible name carries the outcome,
+      stamp, and the open-chat action; outcomes are conveyed as text, never
+      color alone; the running state is announced by its label, not only the
+      spinner.
+    since: 58
+
+  - id: skill-row
+    title: Skill row
+    purpose: A skill in the Skills surface, chat picker, or community catalog.
+    anatomy: [icon, name, description, install-or-check]
+    states: [available, installed, installing, error, editing]
+    variants: [installed-row, picker-select-row, community-catalog-row]
+    behavior: >-
+      Community rows ride the shared catalog grammar (CatalogRow): the row
+      opens the skill's info modal from anywhere on it, a ghost round + installs
+      (spinner while in flight, a quiet check once installed). Installed skills are the same
+      CatalogRow grammar in the consolidated strip above the Store / Custom
+      skills tabs (CatalogShell), capped to a preview behind a "Show all"
+      expander at rest; a row opens the edit modal, whose footer carries
+      Save/Cancel and the destructive Delete (confirm-gated). The chat picker
+      uses the same installed row renderer with search and title-sorted rows;
+      selecting a row places that skill in the composer. No separate
+      skill-detail surface.
+    a11y: rows are single labeled buttons beside a labeled install button, never nested; install state conveyed as text.
+    since: 1
+
+  - id: empty-state
+    title: Empty state
+    purpose: The shared "nothing here yet" surface -- title, description, optional action.
+    anatomy: [title, description, optional-action]
+    states: [default]
+    variants: [with-action, text-only]
+    behavior: Big title + description with one optional primary action; no icon-in-box.
+    a11y: region labeled by the title; action is a labeled button.
+    since: 1
+
+  - id: toast
+    title: Toast / notice
+    purpose: Transient surfacing of an action's result or error (with report-bug affordance).
+    anatomy: [message, optional-action, dismiss]
+    states: [info, success, error, loading]
+    variants: [plain, with-report-bug-action]
+    behavior: >-
+      Every user-initiated error must reach a toast carrying the real reason and
+      a Report-bug action (beta no-silent-failure policy).
+    a11y: status/alert role by severity; auto-dismiss pauses on focus/hover.
+    since: 1
+
+  - id: ai-provider-card
+    title: AI provider row
+    purpose: One AI provider in a browse surface (the AI models hub or a connect flow).
+    anatomy: [brand-mark, name, model-count-and-cost-line, trailing-action]
+    states: [available, connected, connecting, signing-out]
+    variants: [hub-catalog-row, connect-flow-card]
+    behavior: >-
+      Connection state (connected / in-flight) comes from the shared
+      provider-connections layer; the model count is derived from the hub
+      catalog across the row's gateway ids. The hub-catalog-row variant is the
+      shared catalog grammar (CatalogRow): the WHOLE row opens the provider
+      detail modal — every tier of it, including the connected row's usage
+      meters — a ghost round + connects (a Cancel pill while that connect
+      is in flight), and connected providers leave the grid for the
+      consolidated Connected strip above the tabs (CatalogShell), capped to a
+      preview behind a "Show all" expander at rest. There the same CatalogRow
+      renders as a CARD (surface="card"): because it carries a second tier of
+      live detail and opens the account, it paints its surface and hairline ring
+      at REST -- pressability is never discovered by hovering -- answers a press
+      with a scale, and drops the trailing chevron, which is list-row language.
+      The connect-flow-card variant (onboarding / migration / workspace setup)
+      keeps the static card with a trailing Connect / Sign out action; nothing
+      hover-only in any variant.
+    a11y: two sibling buttons, never nested (row body + labeled install); the row's click target is the whole card but its ONE focusable element is the body button, so the card is reached once by keyboard and its name never picks up the extra tiers; on the card surface the focus ring is drawn around the WHOLE card (keyed on that button's focus-visible) so the indicator matches the target it describes; Connect/+ carries the provider name; connected shown as dot + label or a labeled row, not color alone.
+    since: 2
+
+  - id: ai-model-row
+    title: AI model row
+    purpose: One model in the AI hub directory or a provider's model list.
+    anatomy: [lab-glyph, name, lab-name]
+    states: [default]
+    variants: [directory-grid-row, provider-modal-list-row]
+    behavior: >-
+      A unique cross-provider catalog model in the shared catalog grammar
+      (CatalogRow): transparent at rest, the hover fill sweeping the full row.
+      The whole row is one button that opens the model detail modal (models
+      install via a provider offer inside it, so the row carries no +). The
+      directory renders the responsive two-column CatalogGrid; the provider
+      modal keeps a single column. The directory sits under a control row of the
+      AI provider / Good at / Cost / Memory facet comboboxes alone (free-text
+      search is the AI hub's ONE page-level field, threaded in as the query); the
+      provider modal keeps its own local search box above the same facets.
+    a11y: single button role; model name + lab as the accessible label; no nested buttons.
+    since: 2
+
+  - id: connected-provider-usage
+    title: Connected provider card usage
+    purpose: One connected AI account's live limits, on the account's own card.
+    anatomy: [plan-chip, window-meters, credits-line, metered-tokens-line]
+    states: [unconfirmed, loading, ok, unsupported, unauthenticated, error]
+    variants: [rate-limit-windows, credit-balance, metered-tokens]
+    behavior: >-
+      Extends the connected provider card (AI models hub) rather than living on a
+      screen of its own: the plan chip sits at the card's trailing edge and the
+      meters span the card's full width, from the brand mark's left edge to the
+      card's right edge (never indented to the text column, which reads as a
+      paragraph hanging off a row), INSIDE the card's own hover/focus surface AND
+      its click target, so an account and how much of it is left read
+      as one thing: one wash covers both, and a click on the meters opens the
+      same provider detail the card does. Paired from the engine's per-account usage rows
+      (GET /providers/usage — each provider's own usage API read with the
+      already-linked credential). The rate-limit-windows variant renders a
+      labeled meter per rolling window (percent used + localized reset note; the
+      bar tints warning at >= 90%); credit-balance shows the remaining prepaid
+      balance; metered-tokens shows TilinX's own token count for providers with
+      no usage API. Non-ok rows say so honestly (no usage surface / sign in again
+      / the probe's error) instead of faking an empty meter. A row whose
+      connection is only unconfirmed shows NO usage tier at all: an account
+      TilinX cannot read gets no metering claim, not even "not measured yet",
+      and the fetch itself is gated on at least one CONFIRMED account. A loaded
+      row is sized by its content: it ends one padding step after its last
+      meter, never at a reserved height, so an account with a single window
+      leaves no dead band under it. Stillness comes from ONE pre-data frame
+      drawn in the most common account's shape (two window bars) plus readings
+      that are retained across background refetches, so the only resize a row
+      can make is the single settle onto its first reading, and the plan chip's
+      slot is held open meanwhile so nothing reflows sideways. Rows refresh on a
+      slow interval (the hub is a browse surface, not a monitor), on window
+      focus, and on the provider connect event; a failed background refetch
+      keeps the last good readings rather than blanking them.
+    a11y: >-
+      Informative content outside the row BUTTON (the meters below it, the plan
+      chip beside it), so the button's accessible name stays the provider name
+      plus how it is connected, and the plan is exposed as its own content rather
+      than swallowed by a button whose descendants are presentational. Widening
+      the click target to the whole card must not widen the accessible surface:
+      the body button stays the row's ONE focusable element and its activation
+      is what the card's handler reads, so keyboard and pointer each open the
+      row exactly once. Percent and reset are text next to the bar, never color
+      alone.
+    since: 47
+
+  - id: ai-model-offer-row
+    title: AI model offer row
+    purpose: One provider's way to run a model in the model detail's "Get it through" list.
+    anatomy: [provider-glyph, provider-name, pricing-or-subscription, action]
+    states: [available, connecting, connected]
+    variants: [connect-action, connected-opens-provider]
+    behavior: >-
+      Offers sort connected-first, then subscription, then cheapest input price.
+      Connect drives the shared connections layer; a connected row opens the
+      provider detail. Pricing vs "Included with subscription" comes from the offer.
+    a11y: RowCard semantics; Connect is a labeled button; connected shown as dot + label.
+    since: 2
+
+  - id: verified-badge
+    title: Verified badge
+    purpose: The verified-creator indicator glyph shown beside a creator handle on store cards, creator chips, and the profile pane.
+    anatomy: [check-glyph]
+    states: [default]
+    variants: [size-sm, size-md]
+    behavior: >-
+      Presentational only, driven by the creator profile's verified flag. Props
+      only and i18n-agnostic: the consumer passes a translated label used as the
+      accessible name (English "Verified" default). Color comes from the action
+      design token.
+    a11y: img role with the label as its accessible name; conveys meaning by glyph plus label, never color alone.
+    since: 32
+
+  - id: status-badge
+    title: Status badge
+    purpose: >-
+      A colored connection/live-status indicator -- a presence-style dot left of
+      an item name ("dot Asana", catalog rows' statusDot slot) or a dot with a
+      visible label (integration and AI-provider detail surfaces, and a catalog
+      row's secondary line when its item needs attention) -- so
+      connected/pending/error reads without relying on which section the item
+      sits in.
+    anatomy: [status-dot, status-label]
+    states: [active, pending, error]
+    variants: [dot-only, dot-with-label]
+    behavior: >-
+      Presentational, props-only, i18n-agnostic: the status maps to one semantic
+      color token (success/warning/danger) and the consumer passes the already
+      translated label (visible, or sr-only for dot-only rows). One source of
+      the "connected" treatment reused across the integrations and AI-models
+      hubs so it reads identically everywhere.
+    a11y: >-
+      the dot is decorative; status is carried by the visible label
+      (dot-with-label) or an sr-only label (dot-only rows), never color alone.
+    since: 33
+
+  - id: agent-store-navigation
+    title: Agent Store navigation
+    purpose: Brand and destination navigation shared by every Agent Store pane.
+    anatomy: [brand-link, contextual-actions, publish-action]
+    states: [default]
+    variants: [website, in-app]
+    behavior: The surface supplies links or callback-backed navigation and its own contextual actions.
+    a11y: Navigation landmark with visible, keyboard-focusable destination labels.
+    since: 52
+
+  - id: agent-store-controls
+    title: Agent Store catalog controls
+    purpose: Instant search, category, result-kind, and sort controls for the public directory.
+    anatomy: [search-field, category-menu, view-menu, sort-menu]
+    states: [default, filtered]
+    variants: [agents, creators]
+    behavior: Controlled values update the visible in-memory catalog without submitting a page form.
+    a11y: Search has an accessible label; menus expose the selected option and keyboard focus.
+    since: 52
+
+  - id: agent-store-agent-card
+    title: Agent Store agent card
+    purpose: Public listing summary used in browse, detail recommendations, and creator pages.
+    anatomy: [agent-tile, name, skill-and-integration-summary, description, creator, install-count]
+    states: [new, installed-count]
+    variants: [grid]
+    behavior: Activating the card opens its full detail pane through the surface navigation seam.
+    a11y: One focusable link with a visible focus ring and descriptive text.
+    since: 52
+
+  - id: agent-store-creator-card
+    title: Agent Store creator card
+    purpose: Creator directory summary used in browse search and creator discovery.
+    anatomy: [creator-face, identity, verification, bio, agent-count, install-count]
+    states: [with-bio, fallback-bio]
+    variants: [grid]
+    behavior: Activating the card opens the creator profile through the surface navigation seam.
+    a11y: One focusable link; verification has a text alternative.
+    since: 52
+
+  - id: agent-store-detail
+    title: Agent Store detail layout
+    purpose: Full-pane presentation of one agent before installation.
+    anatomy: [header, creator, primary-action, bio, skills, integrations, learnings, recommendations]
+    states: [summary, enriched, installing]
+    variants: [website, in-app]
+    behavior: Detail enrichment is read-only; the surface owns install and navigation actions.
+    a11y: Semantic headings preserve section order and the primary action remains keyboard reachable.
+    since: 52
+
+  - id: agent-store-skill-list
+    title: Agent Store skill list
+    purpose: Two-column preview of the procedures included with an agent.
+    anatomy: [skill-grid, skill-row, more-action, detail-dialog]
+    states: [collapsed, expanded, dialog-open]
+    variants: [detail-pane]
+    behavior: The surface supplies the safe rich-content renderer used inside the skill dialog.
+    a11y: Skill rows are buttons; the modal traps focus and has the selected skill title.
+    since: 52
+
+  - id: agent-store-creator-block
+    title: Agent Store creator block
+    purpose: Reusable creator identity shown in agent detail headers and public profiles.
+    anatomy: [creator-face, display-name, verification]
+    states: [verified, unverified]
+    variants: [compact, profile]
+    behavior: Optionally navigates to the creator profile through the surface link seam.
+    a11y: Linked variants have visible focus; verification has a text alternative.
+    since: 52
+
+  - id: agent-store-home-screen
+    title: Agent Store home screen
+    purpose: Canonical marketplace hero, controls, filtering, result grids, and loading, empty, and error states.
+    anatomy: [hero, catalog-controls, agent-grid, creator-grid, pagination]
+    states: [loading, ready, filtered-empty, empty, error]
+    variants: [website, in-app]
+    behavior: Owns in-memory filtering and state notifications while surfaces supply navigation and URL synchronization.
+    a11y: One centered h1, labeled controls, focusable results, and a visible retry action.
+    since: 53
+
+  - id: agent-store-agent-detail-screen
+    title: Agent Store agent detail screen
+    purpose: Canonical full agent detail composition across public and in-app surfaces.
+    anatomy: [header, creator, actions, bio, skills, integrations, learnings, recommendations, footer]
+    states: [loading, ready, error]
+    variants: [website, in-app]
+    behavior: Surfaces inject actions and safe content renderers without recomposing the screen.
+    a11y: Semantic headings preserve reading order and failures expose a keyboard-accessible retry.
+    since: 53
+
+  - id: agent-store-creator-profile-screen
+    title: Agent Store creator profile screen
+    purpose: Canonical creator identity header and public agent grid.
+    anatomy: [avatar, identity, verification, bio, socials, agent-grid, pagination]
+    states: [loading, ready, empty, error]
+    variants: [website, in-app]
+    behavior: Surfaces supply navigation, social actions, and pagination without owning profile composition.
+    a11y: Identity uses semantic headings, links have visible focus, and failures expose a retry.
+    since: 53
+
+  - id: sidebar-team-block
+    title: Sidebar team block
+    purpose: >-
+      One team in the navigation rail: its name and the agents that belong to
+      it.
+    anatomy: [header-row, team-glyph, team-name, disclosure-caret, rollup-badge, header-menu, identity-picker, agent-rows, empty-hint]
+    states: [resting, active, collapsed, collapsed-active, collapsed-rollup, drop-target, drop-refused, empty, renaming]
+    variants: [named-team, default-team]
+    behavior: >-
+      Every agent belongs to exactly one team, so the rail is a list of team
+      blocks and nothing else. Named teams are the stored sidebar groups; the
+      trailing DEFAULT team is the workspace itself, wearing the workspace name
+      and holding every agent in no group.
+      A block is ONE LADDER of rows, not a header with a list beneath it. The
+      team row and every agent row share a single anatomy: one fixed row
+      height, one glyph column, one type size, one rounded hover fill, and an
+      active state that is a clearly-defined pill rather than a faint tint. Hierarchy is carried by an indent INSIDE the
+      row, so the pills line up in one clean column down the block's left edge
+      instead of stepping in and out with their contents; a row's glyph also
+      inherits its label's colour, so an active row brightens as one object
+      rather than as a label with a stale mark beside it. Any of the three row
+      kinds drifting in height or indent makes the block read as several stacked
+      lists, which is exactly what it used to do.
+      That ladder is not the block's alone. EVERY interactive line in the rail
+      is the same row wearing different options -- the top-level destinations
+      above the list, the band that names it, each team header, each destination
+      row, each agent, and the New agent row that closes it -- so the whole rail
+      is one column of pills with one glyph column running down it, and there is
+      exactly one indent step between a row that heads something and a row that
+      hangs under one. Weight states that DEPTH and never the state: a block-
+      level row is medium and a child row is regular, whatever is selected, so
+      clicking a row cannot re-measure its label and shift where a long agent
+      name truncates. The two things deliberately outside the shared row are the
+      collapsed icon rail, which is a different anatomy rather than a narrower
+      one, and inline rename, because a text field is not a state of a button.
+      The team row itself is ONE hit target carrying the glyph, the name, the
+      caret that states whether the block is open and the block's rollup badge,
+      with the "..." menu beside it rather than inside it. It used to be three
+      separate controls sharing one job, which cost a keyboard user three stops
+      to reach a single disclosure. The caret is an INDICATOR and takes no
+      clicks of its own: what the row does depends on where the user already
+      is, so a caret claiming to be the fold button would promise an outcome it
+      does not own.
+      Clicking a team's name answers four questions with one gesture. From
+      anywhere else it OPENS that team, unfolds it, and folds every other block
+      -- an accordion, because a rail of eight expanded teams is a list of
+      agents with headings in it, and the team just asked for is the only one
+      whose members are worth the space. From another of the same team's
+      surfaces it simply comes back to the team's work. On the team's own work,
+      it folds the block, and folds it back open on the next click. Folding is
+      the only one of the four that does not move the screen: the rail may fold
+      while the surface stays, which is deliberate and user-invoked.
+      The team's glyph is the team's IDENTITY: a solid mark the user picked
+      from a curated set, tinted by a colour they picked from the SAME palette
+      the agent avatars below it use. One vocabulary, so a team and an agent can
+      never mean two different purples, and a team stays recognisable at a
+      glance in a rail full of blocks. A team that has chosen neither wears a
+      neutral people mark inheriting the row's own colour, which is what every
+      block looked like before and is still what most of them look like. This
+      is the one place a rail glyph pins a colour, and it is deliberate: the
+      mark is identity a person chose, not decoration a component invented.
+      Collapsing folds away EVERYTHING under the header. The hole that leaves is
+      answered by the header twice over. It wears the selected pill whenever the
+      open view belongs to this team, folded or open alike -- with no
+      destination rows left in the block, the header is the only row that can
+      answer "where am I" for a team at all. And it picks up a ROLLUP of what
+      its hidden agent rows were signalling: the sum of their waiting work as a
+      badge, and the same running treatment an agent's mark wears if any member
+      is working. Both only while folded, because an open block's rows say it
+      themselves and two badges in one block would count the same work twice.
+      Folding a team must never mean losing sight of it.
+      The DEFAULT block renders and folds exactly like a named team. One that
+      folded everywhere except there would make the team everybody has the one
+      row in the rail that answers a click differently, which is the kind of
+      exception a user reads as a bug. Its folded state is persisted separately
+      from the stored groups, because the block is virtual -- it is the
+      container, not a record -- and its absence reads as open, so every layout
+      written before it stays untouched. What it still does not get is what the
+      container itself lacks: no rename, no delete, no leave, no menu at all,
+      and no drag handle.
+      A block holds MEMBERS and nothing else. A team's sections live on the
+      screen its name opens, as tabs over the team's own work: four rows per
+      team spent most of the rail on the same four words repeated, and the
+      rail's job is to say WHICH team, not which of its surfaces. Selecting an
+      agent opens its team's work pre-filtered to that agent, so the rail and
+      the open view always agree on where the user is.
+      A DRAG reorders and nothing more: an agent inside its own team, a team
+      block among its siblings. An agent dragged over any other block is
+      REFUSED -- no block offers to receive it and the lifted copy dims -- because
+      a drop across blocks was the one gesture here that changed what a team
+      HOLDS, and a slip of the wrist across a rail full of blocks is not a way
+      to decide that. Moving an agent to another team is a named action on the
+      team's own screen, where it can be read before it is taken.
+      Where teams are SERVER-OWNED and shared with other people, the blocks are
+      the teams the caller has JOINED. A team they have not joined is not a
+      block at all: it lives in the band's Join menu (see sidebar-teams-band),
+      because the rail is a working surface and not a directory. Joining is
+      sidebar PINNING, not a grant: it moves the team into the rail and nothing
+      else, because who may see a team's agents was already settled by the
+      space's roles, and a rail that implied otherwise would be selling
+      permission it does not hold. Leaving is the same move backwards, which is
+      why it lives at the BOTTOM of the header menu behind a separator:
+      everything above it edits the team, and this one edits the caller's
+      relationship to it. Which menu entries a block offers is decided PER TEAM,
+      not once for the rail -- the caller may own one team and merely belong to
+      the next -- and a block that offers none shows no menu at all rather than
+      an empty one. Creating a team asks for the name FIRST: the new block is a
+      local draft until a name is committed, and abandoning the field removes
+      it, so no placeholder-named team is ever broadcast to the people sharing
+      the space.
+    a11y: >-
+      The team row is ONE button carrying aria-expanded and an aria-controls
+      pointing at the region it folds, so the disclosure is announced rather
+      than inferred from a rotating caret; the caret is decorative and hidden.
+      The default block's row is that same button -- it folds a real region, so
+      it makes a real promise, which is the opposite of the inert label it used
+      to be. It carries aria-current="page" whenever the team's work is the open
+      view, so "you are here" survives folding instead of vanishing with the
+      rows it hid, and its rollup badge and running treatment both carry a
+      spoken label with the number in it, since the rail must never turn into a
+      wall of digits to be read. The "..." menu is always rendered rather than revealed on
+      hover: a control that exists only under a cursor is unreachable by touch
+      and invisible to anyone scanning the rail.
+    since: 55
+
+  - id: sidebar-teams-band
+    title: Sidebar teams band
+    purpose: >-
+      The furniture wrapping the rail's team blocks: the band that names the
+      list and folds all of it, the one menu that creates teams and agents, and
+      the New agent row that closes the list. The BAND itself is shared with the
+      two nav runs above it (see sidebar-nav-band).
+    anatomy: [band-label-toggle, band-caret, add-menu-trigger, add-menu, add-agent-row]
+    states: [resting, collapsed, menu-open]
+    variants: [personal, shared-space]
+    behavior: >-
+      The band is the rail's list header and its only LIST-level control -- one
+      per rail, however many team blocks hang under it, which is what makes it a
+      different thing from the block headers it sits above.
+      Its LABEL is the toggle. The caret sits immediately after the words rather
+      than pinned to the far edge, so the control reads as one phrase you can
+      click instead of a label that happens to have an arrow near it, and the
+      button is sized to its text because everything to the right of the words
+      belongs to the action, not to the disclosure. Folding it puts every team
+      block away at once, and the state is persisted: a rail that forgets it was
+      folded on every reload is worse than one that never folded. Folding is an
+      EXPANDED-rail idea only -- the icon rail has no band to fold from, so it
+      must never inherit a hidden list.
+      ONE "+" menu carries everything the rail can create: New agent and New
+      team. Those used to be two unnamed glyphs sitting on a row that already
+      had a label. Browsing and joining OTHER teams is gone entirely: a member
+      sees only the teams they are part of, and people are added to a team from
+      its settings, so the rail no longer stacks teams the user never opens
+      underneath the few they live in. The menu degrades to a plain named button
+      when there is exactly one thing to create, and renders nothing when there
+      is none.
+      New agent is ALSO a visible row at the foot of the list, not only a menu
+      entry, because creating an agent is the rail's primary action and a
+      primary action may not live one level deep inside a menu. That row wears
+      the child-row geometry of the blocks above it (see sidebar-team-block), so
+      the list ends on the same ladder it was drawn on rather than on a control
+      that has floated free of it, and it is the one the guided tour points at.
+    a11y: >-
+      The label is a real button with aria-expanded and an aria-controls
+      pointing at the list it folds; its caret is decorative and hidden. The
+      menu trigger carries an accessible name of its own rather than borrowing
+      the band's, because a "+" says nothing aloud. The add row is a button
+      inside the list's own reading order, not chrome parked outside it.
+    since: 58
+
+  - id: sidebar-nav-band
+    title: Sidebar nav band
+    purpose: >-
+      The rail's top-level destinations above the team list, and the two bands
+      that name them: My accounts and Workspace.
+    anatomy: [nav-row, nav-glyph, nav-label, nav-count-badge, band-label-toggle, band-caret, footer-row]
+    states: [resting, hover, active, collapsed, with-count, icon-rail]
+    variants: [unlabelled-run, labelled-run]
+    behavior: >-
+      Two destinations LEAD the rail with no band over them, because they are
+      the two a user heads for without being asked: where work arrives, and
+      where agents come from. Everything else is filed under a band that says
+      whose it is. The leading run also carries the offer to be WALKED through
+      the app, beside the store a new user opens first: the guided tour is a
+      destination people go looking for, not a control hiding on one screen's
+      chrome. My accounts holds the connections that belong to the PERSON, the
+      apps they have authorised and the AI accounts their turns run on: nobody
+      else in the space is affected by either. Workspace holds what the whole
+      SPACE is made of and belongs to the people who run it: who is in it, who
+      may use which agent, its skills, and how long its agents have worked. A
+      plain member is not shown any of that, so for them the band does not
+      exist at all.
+      Settings is not in any of those runs. It belongs to the person rather
+      than to the space, and it has to be reachable in every deployment,
+      including the ones where the Workspace band is absent entirely, so it is
+      a permanent row in the rail's FOOTER beside the account menu.
+      A band whose rows are all hidden by a gate is DROPPED with its rows: a
+      heading may never outlive the list it names.
+      The bands are the SAME band as the team list's below them, down to the
+      type step, the caret placement, the fold, the gap under the heading and
+      the LEFT EDGE all three sit on. Three headings in one rail that folded,
+      sat or aligned differently would be three rules for one row shape, so
+      there is one of them wearing three labels and the inset is spent exactly
+      once per heading. Each remembers its own fold, per machine.
+      There is no general mission board among these rows. Every board belongs to
+      a team, so the app opens on the first team's board and the only
+      destination here that needs no team is the inbox, which is where the app
+      waits while the teams are still arriving.
+      The inbox row carries a count when someone has typed your name, and
+      nothing at all when they have not: a permanent zero is a number the eye
+      learns to skip, leaving the row no way to say something arrived. It is the
+      same count, from the same list, as the notifications control on a board.
+      The icon rail drops the bands and every fold with them: a heading has
+      nowhere to go at that width, the labels it would carry are already in each
+      glyph's tooltip, and a run left folded there would strand a destination
+      with nothing on screen to bring it back.
+    a11y: >-
+      Each band label is a real button carrying aria-expanded and an
+      aria-controls pointing at the run it folds; its caret is decorative. A
+      destination row announces its own name plus its count when it has one, so
+      the number is never carried by colour or position alone. In the icon rail
+      every row keeps an accessible name through its tooltip trigger.
+    since: 59
+
+  - id: team-identity-picker
+    title: Team identity picker
+    purpose: >-
+      The popover behind a team's "Change icon & color": a grid of solid marks
+      and a row of colour swatches, applied as they are clicked.
+    anatomy: [menu-entry, icon-grid, icon-cell, swatch-row, swatch, reset-entry]
+    states: [resting, hover, selected, none-chosen, applied]
+    variants: [named-team, default-team]
+    behavior: >-
+      A team's identity is a GLYPH NAME and a COLOUR, both optional and both
+      edited by whoever may rename the team. The set of marks is the client's
+      own curated vocabulary rather than an image upload or an open icon
+      library: a fixed set is the only way every mark reads at rail size and
+      renders the same on every surface, and it costs the user a choice instead
+      of a design task. The colours are not a new palette either -- they are the
+      same swatches an agent's avatar uses, so one vocabulary of colour carries
+      identity everywhere.
+      Every pick is applied IMMEDIATELY and optimistically: the rail repaints
+      the moment a mark is clicked, and a refusal puts the previous identity
+      back and says why in the user's own words. Choosing a mark before a
+      colour has to look right, so the grid itself is tinted by whatever colour
+      is currently chosen -- picking either half previews the pair.
+      Clearing is a first-class choice, not a missing one: a single Default
+      entry drops BOTH fields and returns the team to the neutral mark, and it
+      is offered only when there is something to clear.
+      The catch-all team is included. Restyling is a rename, not a structural
+      change, so a team you may name is a team you may style.
+    a11y: >-
+      The entry opens a submenu of the block's own "..." menu, so it is reached
+      by keyboard the same way every other block action is. Each mark and each
+      swatch is a real button carrying its own name and a pressed state, so the
+      current choice is never signalled by colour or position alone.
+    since: 60
+
+  - id: team-screen
+    title: Team screen
+    purpose: >-
+      The full-window surface behind a team block's destination rows: one
+      team's missions, what its agents do on their own, what they keep, and the
+      agents that belong to it.
+    anatomy: [board-toolbar, team-title, agent-filter, mission-board, phone-task-list, phone-status-filter, phone-overflow-menu, phone-inline-search, phone-settings-tabs, archived-board, routines-list, files-browser, failed-agents-strip, empty-state, settings-agent-list, agent-drill-in, members-card]
+    states: [mission-control, mission-control-filtered, phone-task-list, phone-task-list-filtered, phone-task-list-searching, archived, routines, files, empty, partially-unavailable, settings, settings-agent-detail, settings-members]
+    variants: [named-team, default-team]
+    behavior: >-
+      ONE screen serves every team: which team and which of its sections are
+      open is state, so a team can be renamed, reordered or deleted without
+      leaving a dead view behind, and a team that stops existing sends the user
+      home, to the first team's board, rather than to a blank pane. The sections it can
+      show are exactly the destination rows the team block offers, so the rail
+      can never point at something the screen will not render; a section the
+      caller may not open resolves to Mission Control. Mission Control is the
+      SAME board the global one is, narrowed to the team's agents and titled
+      with the team's name, reading the one cross-agent sweep rather than
+      starting its own. Its agent filter is shared with the rail in both
+      directions: selecting an agent row filters the board, and picking one in
+      the board's own filter menu moves the lit row -- except under Team
+      Settings, which ignores the pin and lists the whole team, so no agent row
+      is filled there. An empty team says why it
+      is empty -- the workspace's own team offers the create-an-agent door, a
+      named team says to drag one in, because that is where a new agent would
+      land. Routines is ONE list of every team agent's routines, each row
+      naming its owner, because a routine is a flat thing and a team wants to
+      see what runs on its behalf in one place; routines still being BUILT in
+      chat are rows here too, resumable and discardable, so one started from
+      this surface never vanishes from it. Files is the opposite call:
+      folders are not flat and merging several agents' trees would invent a
+      filesystem nobody has, so the section picks ONE agent and shows that
+      agent's real tree, with every action the per-agent surface offers.
+      Both read the same per-agent caches the per-agent surfaces do, so an
+      event that refreshes one refreshes the other; when some agents answer and
+      others do not, the section says which ones failed and offers to retry
+      just those (and to report it), rather than presenting a short list as the
+      whole truth -- and when NOTHING answered it stops claiming the team is
+      idle at all. Team
+      Settings lists the team's agents with the same plain-language access line
+      every agent list shares, and opening one drills into the ONE canonical
+      agent settings page rather than a second copy of it.
+      Below the one breakpoint the strip is gone: the Teams tree chose the
+      section a level up, so the screen wears the drilled phone header (back
+      chip, team, the section's name) instead; the Team Settings level keeps
+      its Context / Agents / People / Settings tabs there too, as a segmented
+      row under that header, a tab replacing the navigation entry rather
+      than pushing one. Tasks there is a LIST, not the
+      board -- the same missions the columns hold, grouped Needs you /
+      Running / Done as bands of shared task-rows under the same All / Needs
+      you / Running / Done status filter (a pill dropping a radio menu) the
+      per-agent list wears, each
+      row trailing its OWNING agent's helmet (a team's list mixes agents, and
+      the band already says how fresh the task is). There is no pager, no
+      agent chip bar and no compose on the screen: the nav bar's one New task
+      control composes, and the team-wide agent pin stays a desktop affair.
+      The header's "..." menu holds the three things the screen will not
+      spend a row on -- Search (an inline field that narrows the same query
+      the desktop toolbar types into), Archived (which swaps in the archive,
+      with its own way back) and Team settings, offered only to a caller who
+      may actually configure the team. A segment or a search that matches
+      nothing says so in words; a team with no tasks at all gets the honest
+      empty state. Tapping a row pushes the mission-chat-screen.
+      Where teams are server-owned, Team Settings is also where a team is NAMED
+      and where its PEOPLE are, in a members card under the agents: the rows are
+      EXPLICIT memberships only, so a card that lists nobody is not a claim that
+      nobody can reach the team, and it says as much -- owners and admins of the
+      space manage every team without ever appearing in it, and the space's
+      catch-all team holds no rows at all because everybody is in it. Only a
+      team's owner sees the controls that write (making someone an owner,
+      removing them); everyone else reads the same list. This is also the only
+      door to renaming the catch-all team, whose rail block deliberately offers
+      no menu. The caller's own Join and Leave sit here too, next to the list
+      that explains what they mean.
+    a11y: >-
+      The board's team name is the screen's h1; the filter menu names the agent
+      it is pinned to; the settings drill-in is framed by a labelled back
+      control naming the team it returns to; every members-card control names
+      the person it acts on. On the phone the team is the h1 with the
+      section under it, the status segments are a labelled tablist, the "..."
+      chip and the inline search field are both labelled, and a task row
+      names its owning agent in text rather than by helmet colour alone.
+    since: 55
+
+  - id: mobile-nav-bar
+    title: Mobile nav bar
+    purpose: >-
+      The phone shell's floating bottom pill: Agents, Teams and More, plus a
+      separate round new-task control, below 768px only.
+    anatomy: [pill, nav-item, item-glyph, active-item-label, needs-you-badge,
+      new-task-control]
+    states: [resting, active, with-count, menu-open, hidden-under-chat]
+    variants: []
+    behavior: >-
+      A floating pill a little above the bottom edge, padded against the
+      home indicator, with three items and never a fourth: Agents (the
+      landing item, rooting on the agents tree), Teams (rooting on the
+      teams-home tree) and More (which opens the mobile-more-menu rather than
+      navigating). Inactive items are glyph-only; the active item widens into
+      an inner pill carrying its glyph and label, so the bar names exactly one
+      place at a time and is never dark: the Agents home and its drill-ins
+      light Agents, a team screen and the teams tree light Teams, every other
+      screen (Settings, Inbox, the store, integrations, skills, admin, about
+      me, the academy) lights More. Tapping Agents or Teams RESETS the
+      navigation trail to that root the way native tab bars do, so hardware
+      back afterwards stays on the new root. The Agents item wears the same
+      needs-you count badge the rail rows wear, the cross-agent sum of
+      missions waiting on the user, nothing at zero. The round control to the
+      right of the pill starts a new task, scoped to where the user stands:
+      inside an agent's list it opens that agent's draft chat, on a team
+      screen it asks among that team's agents, anywhere else it asks among
+      everyone (new-mission-sheet). It is the phone's ONLY New task control --
+      no screen carries one of its own -- so it is also what the guided setup
+      rings for that step, and it sits outside every screen rather than
+      inside the active one. While a chat is up (the pushed
+      mission-chat-screen or the board's full-screen panel) the whole bar
+      hides: chat is a push, not a tab, and the composer takes the full
+      height above the keyboard. There is no top bar and no drawer on the
+      phone any more; the bar and the More menu are the whole of the phone's
+      chrome.
+    a11y: >-
+      A nav landmark with an accessible name; every item and the new-task
+      control is a real button with an aria-label, the active item carries
+      aria-current, the count badge announces its meaning ("N issues need
+      you") rather than a bare number. Targets are at least 44px tall.
+    since: 75
+
+  - id: mobile-more-menu
+    title: Mobile More menu
+    purpose: >-
+      The phone's long tail behind the nav bar's More item: every destination
+      the desktop rail lists, as a floating card rising from the bar.
+    anatomy: [card, workspace-switcher, settings-control, band-label,
+      destination-row, row-glyph, mention-badge, help-row]
+    states: [closed, open]
+    variants: []
+    behavior: >-
+      A floating rounded card anchored just above the nav bar, dismissed by
+      scrim tap or swipe, never a full-height sheet. Its header is the
+      workspace switcher beside a Settings control; below it the desktop
+      rail's destinations in the rail's own order and bands, one row each,
+      hairlines between bands: the unlabelled lead run (Inbox with its
+      unread-mention badge, About me, Academy, Agent Store), "My accounts"
+      (Integrations, AI Models where the caller may see it) and "Workspace"
+      (Admin, Skills, each behind the same gate the rail applies), then the
+      help pair (Guide me, Report a problem). One list, the rail's own, so a
+      destination cannot exist on the desktop and be unreachable on the
+      phone. Picking a destination closes the card and RESETS the navigation
+      trail to that screen, with the bar's More item lit; opening the card
+      itself is not a navigation and leaves no history entry. The guided
+      setup rings the More item first and then the row inside the open card,
+      exactly as it once rang the hamburger and the drawer row.
+    a11y: >-
+      A modal dialog named "More"; every row is a real button at least 44px
+      tall named by its destination, the mention badge announces its count,
+      and dismissal is reachable by the hardware back and the scrim.
+    since: 75
+
+  - id: teams-home
+    title: Teams home
+    purpose: >-
+      The phone's Teams tab root: every team as a tree row with its sections
+      indented beneath it.
+    anatomy: [title, team-row, team-glyph, guide-line, section-row,
+      section-glyph, skeleton]
+    states: [tree, loading]
+    variants: []
+    behavior: >-
+      One bold, non-tappable row per team (its glyph and name, the virtual
+      default team named after the workspace), and under each, indented
+      beside a thin guide line, one tappable row per section in the DESKTOP
+      strip's own order and words: Tasks, Routines, Files, Team Settings.
+      Tasks, Routines and Files are every member's; Team Settings is the
+      door a caller who may configure the team gets, and it lands where the
+      desktop's door lands -- the drilled Team Settings level, on Context,
+      whose Context / Agents / People / Settings panes are the tabs of that
+      level (team-screen), never rows of this tree. Tapping a section PUSHES
+      that team's screen on that section, so the screen's back chip and
+      hardware back both retreat to this tree; the tree is the one place a
+      team's section is chosen on the phone, so the team screen draws no
+      section switcher there. At least one team row always exists; while the
+      teams are still resolving the tree renders a skeleton of itself rather
+      than an empty claim.
+    a11y: >-
+      The title is the screen's h1; team rows are headings, not buttons;
+      every section row is one real button at least 44px tall named
+      "<section>" within its team's group.
+    since: 75
+
+  - id: agents-home
+    title: Agents home
+    purpose: >-
+      The phone's landing screen and the Agents tab's root: every agent as a
+      chat-list row, the whole roster or one team's.
+    anatomy: [title, new-agent-control, team-selector, agent-row,
+      avatar-stack, running-ring, preview-line, relative-time, needs-you-chip,
+      empty-state]
+    states: [list, filtered, loading, no-agents]
+    variants: [all-teams, one-team]
+    behavior: >-
+      One flat list in the grammar of a messaging app's chat list. Each row is
+      a LARGE avatar on the left -- the agent's helmet, fanned out into a stack
+      of three cards (the front one straight, two tilted behind it) when the
+      agent holds two or more visible tasks, a single mark otherwise -- then
+      the agent's name with the time of its latest movement trailing, and
+      under the name the preview line: "Typing" while the agent has a task
+      running, else the title of the agent's most recently moved task, or
+      "No tasks yet". The same needs-you count chip the rail
+      rows and the nav bar wear sits at the end of the preview line (one
+      badge shape, one number, never a recount), and the front card wears the
+      same running ring the rail draws. The rows keep the attention sort:
+      agents with tasks waiting on the user first, then agents with running
+      work, then everyone else, most recently active leading each band. Under
+      the title, where the workspace has more than one team, a team selector
+      (a pill dropping a menu of every team) narrows the list to one team's
+      agents; "All teams" is the default, the choice is a preference rather
+      than a navigation level (it survives the drill into an agent and back),
+      and a chosen team that no longer exists widens the list back out. A
+      trailing control in the title row creates an agent (where the caller
+      may). With no agents at all the screen says so instead of rendering a
+      hollow list. Counts and previews read the same conversation sweep and
+      per-agent summaries every other badge surface reads, repainting through
+      the ordinary event invalidation, never a fetch path of their own.
+      Tapping a row adopts the agent as current and pushes its task list onto
+      the navigation stack, so back pops out of the drill.
+    a11y: >-
+      The screen's title is its h1; each agent row is one button at least 72px
+      tall named by the agent and its preview, with the chip and the running
+      ring carrying their own accessible labels ("N issues need you", "N
+      issues running") and the avatar stack hidden as decoration; the team
+      selector is a button named by the current choice that opens a radio
+      menu; the create control is a labelled button.
+    since: 71
+
+  - id: agent-missions-list
+    title: Per-agent task list
+    purpose: >-
+      One agent's tasks as a filterable, sectioned phone list, pushed from the
+      Agents home; the drill level between the agent tree and a task's chat.
+    anatomy: [drilled-header, back-chip, agent-avatar, task-count, overflow-menu,
+      status-filter, inline-search, task-group, task-row, avatar, preview-line,
+      relative-time, status-tag, archived-group, empty-state]
+    states: [sectioned, filtered, searching, search-empty, filter-empty,
+      archived-collapsed, archived-expanded, no-tasks]
+    variants: []
+    behavior: >-
+      The drilled phone header names the agent (avatar with its running ring)
+      over its live task count and carries a back chip to the Agents home (a
+      navigation-stack retreat, so the hardware back button does the same
+      thing) plus one "..." menu. A status filter under it -- a pill naming
+      the current choice ("All" by default) that drops a radio menu of All,
+      Needs you (with its count), Running, Done -- narrows the list, and the
+      body draws the board's own sections in that order, by the exact status
+      mapping the board's columns use (an errored task sitting in Needs you),
+      each newest movement first, each band vanishing rather than rendering
+      hollow. Rows are in the chat-list grammar of the Agents home: the
+      agent's LARGE avatar on the left (its running ring while that task
+      runs), the task's title with the movement's relative time trailing, a
+      preview line under it ("Typing" while running, else the task's own
+      description), and a small status tag beneath (Needs you / Running /
+      Done / Archived) in the status's own tone. The "..." menu holds the two
+      things the screen will not spend a permanent row on: Search reveals an
+      inline field that narrows the rows by title as the user types (Escape
+      or its own control closes it), and Archived resets the filter to All,
+      expands the archive and scrolls it into view. The archive is a
+      collapsible group at the bottom, present only under All: it is the
+      list's basement, not a status. Tapping an active task pushes its
+      mission-chat-screen as the next navigation-stack level, the same push a
+      board card performs, so back pops straight from the chat to this list.
+      An archived task has no chat screen: its rows keep the notification
+      navigation (the agent becomes current, its board opens with the archive
+      surface swapped in, and the chat opens over it). An agent with no tasks
+      at all gets the honest empty state pointing at the compose control; a
+      filter or a search that matches nothing says so in words. Rows read the
+      same conversation sweep the boards read and live-update through the
+      same invalidation.
+    a11y: >-
+      The back chip is a labelled button naming the level above; the agent is
+      the screen's h1 with the task count under it; the filter is a labelled
+      button opening a radio menu whose items carry aria-checked; section
+      headings are real headings; every task row is one button named by its
+      title with the status tag carrying the state's own word; the archived
+      toggle carries aria-expanded; the overflow control and the search field
+      are both labelled.
+    since: 71
+
+  - id: task-row
+    title: Task row
+    purpose: >-
+      One task as a phone list row, plus the named band it sits in: the shared
+      shape behind every task list outside the board -- an agent's list and a
+      team's Tasks screen alike.
+    anatomy: [status-glyph, title, preview-line, trailing-slot, group-heading,
+      group-count, group-chevron]
+    states: [needs-you, running, done, archived, with-preview, without-preview,
+      group-open, group-collapsed]
+    variants: [row, group]
+    behavior: >-
+      The row's leading glyph is the ONLY thing that names a task's state --
+      an alert mark for needs you, a spinning ring for running (the one state
+      that moves, and only when the platform allows motion), a check for done,
+      a box for archived -- because the lists that use it already group by
+      section and a second badge would repeat the heading. The title sits over
+      an optional preview line, shown only when the task actually has a
+      description, and a trailing slot carries whatever the surface flushes
+      right: the movement's relative time on an agent's own list, the owning
+      agent's helmet on a team's, where several agents share the list. The
+      whole row is one
+      target: a phone row has no room for a second, and nothing on it waits
+      for a hover. A hairline separates rows and drops on the last of a stack.
+      The group is a muted heading with its count flush right; a collapsible
+      group (the archive) is a chevron button whose rows render only while it
+      is open.
+    a11y: >-
+      Each row is one button at least 48px tall named by its title; the status
+      glyph carries the state's own accessible name rather than colour alone; a
+      collapsible group's heading is a button carrying aria-expanded, and a
+      count may be given spoken words instead of a bare digit.
+    since: 76
+
+  - id: mission-chat-screen
+    title: Mission chat screen
+    purpose: >-
+      The phone's full-screen chat, pushed as a first-class navigation level
+      from a board card, an Agents-home mission row, or the compose flow.
+    anatomy: [back-chevron, agent-avatar, agent-name, mission-line,
+      message-log, composer]
+    states: [conversation, draft, running, loading-history]
+    variants: []
+    behavior: >-
+      Chat is a PLACE on the phone, never a panel: opening a mission pushes
+      this screen onto the navigation stack over whatever screen the user was
+      on, and its back chevron and the hardware back button pop the same
+      level, landing exactly where the push happened. Both mobile bars hide
+      while it is up. The chat itself is the one shared chat the desktop
+      panel renders -- same message log, composer, queued follow-ups, drafts,
+      child-mission links and per-agent features, driven by the same shared
+      view-models -- so the two surfaces cannot drift. A draft chat (the
+      compose flow) opens the screen with no mission and creates one on the
+      first send, replacing itself in place so back never revisits the blank
+      composer; opening a child or parent mission from the chat pushes that
+      mission's screen. Deleting or archiving the open mission closes the
+      screen. The composer stays above the on-screen keyboard (the screen
+      pads itself by the visual viewport's occluded bottom), pads against the
+      home indicator, and the log keeps its stick-to-bottom anchoring when
+      the keyboard opens or closes. Navigating anywhere underneath closes the
+      chat.
+    a11y: >-
+      The back control is a labelled button; the header names the agent and
+      the mission in text; the log is a live region the way the shared chat
+      already marks it; the composer input is at least 16px so the phone
+      never zooms it.
+    since: 72
+
+  - id: new-mission-sheet
+    title: New mission compose sheet
+    purpose: >-
+      The phone's compose flow: a bottom sheet asking which agent should run
+      the new task, leading into an empty draft chat.
+    anatomy: [sheet, title, description, agent-row, agent-avatar]
+    states: [open, closed]
+    variants: []
+    behavior: >-
+      Opened by the new-task control (the nav bar's and the board control
+      row's, one rule). With several agents it lists one row per agent;
+      picking one dismisses the sheet and pushes that agent's empty draft
+      mission-chat-screen. With exactly one agent the question is skipped and
+      the draft chat pushes directly; with none the app falls back to its one
+      shared home navigation. The sheet pads against the home indicator and
+      dismisses on scrim tap or swipe-down without navigating.
+    a11y: >-
+      A modal dialog with its title as the accessible name; each agent row is
+      one real button named by the agent, at least 44px tall; dismissal is
+      reachable by the sheet's own close affordance, never scrim-only.
+    since: 72

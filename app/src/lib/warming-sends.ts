@@ -1,0 +1,308 @@
+/**
+ * The warming-engine send queue (HOU-693).
+ *
+ * A message sent while the agent's engine is still warming up must NOT go out
+ * as a held wire request: infrastructure timeouts kill held connections, and
+ * a reload aborts them — either way the message silently dies. Instead the
+ * message renders as a local bubble immediately, is persisted with the
+ * agent's provisioning entry, and the real send fires the moment the
+ * readiness probe clears (`flushWarmingSends`), with `suppressUserBubble` so
+ * the bubble is never doubled.
+ *
+ * Attachment prompts are built by a closure (the files can't persist): after
+ * a relaunch the flush falls back to the message text alone.
+ */
+
+import type { ActivityStatus } from "@tilinx-ai/engine-client";
+import {
+  type MessageMention,
+  pushPendingUserMessage,
+} from "@tilinx-ai/engine-client";
+import { getConversationFeed } from "../hooks/use-conversation-vm";
+import { actingUser } from "./acting-user";
+import { isAgentGoneError } from "./agent-gone";
+import type {
+  PendingWarmingSend,
+  ProvisioningEntry,
+} from "./agent-provisioning";
+import { getEngine } from "./engine";
+import { showErrorToast } from "./error-toast";
+import i18n from "./i18n";
+import { logger } from "./logger";
+import { refreshMissionTitle } from "./mission-title";
+import { healStaleRosterFromError } from "./roster-heal";
+import { tauriActivity, tauriChat, tauriProvider } from "./tauri";
+import {
+  preferRowPin,
+  type RowPin,
+  verifyWarmingSendPin,
+} from "./warming-send-pin";
+
+/** Prompt builders keyed by send id — in-memory only, lost on reload. */
+const promptBuilders = new Map<string, () => Promise<string> | string>();
+
+/** Entries whose flush has started: too late to queue — send normally. */
+const flushing = new WeakSet<ProvisioningEntry>();
+
+export function isFlushingWarmingSends(entry: ProvisioningEntry): boolean {
+  return flushing.has(entry);
+}
+
+export interface QueueWarmingSendArgs {
+  agentPath: string;
+  sessionKey: string;
+  /** What the user typed — bubble + fallback prompt. */
+  text: string;
+  /** Builds the real wire prompt (attachment refs). Optional. */
+  buildPrompt?: () => Promise<string> | string;
+  /** Board row for a NEW conversation's first message (created at flush). */
+  row?: PendingWarmingSend["row"];
+  provider?: string;
+  model?: string;
+  effort?: string;
+  mode?: "execute" | "plan" | "auto";
+  /** Teammates this message @mentions (HOU-944) — chipped on the local bubble
+   *  now, shipped with the deferred send at flush. */
+  mentions?: MessageMention[];
+  /** Set = run the async AI title pass on this text once the flush lands. */
+  titleText?: string;
+  /** Row-only entry: no bubble now, no wire send at flush (HOU-713). */
+  rowOnly?: boolean;
+}
+
+/**
+ * Render the bubble and hand the send to the provisioning entry. The caller
+ * (the store) owns entry mutation + persistence; this builds the record and
+ * parks the prompt builder.
+ */
+export function buildWarmingSend(
+  args: QueueWarmingSendArgs,
+): PendingWarmingSend {
+  // A row-only entry carries no user message — nothing to render.
+  if (!args.rowOnly) {
+    // Stamp the sender (HOU-943): the real send at flush suppresses its own
+    // bubble, so this push is the row's ONLY chance to be attributed — without
+    // it a warmed-up agent's first message stays nameless in a shared thread.
+    // `mentions` rides for the same reason (HOU-944): this push is the only
+    // chance the bubble ever gets to chip the teammates it named.
+    pushPendingUserMessage(
+      args.agentPath,
+      args.sessionKey,
+      args.text,
+      actingUser(),
+      args.mentions,
+    );
+  }
+  const send: PendingWarmingSend = {
+    id: crypto.randomUUID(),
+    sessionKey: args.sessionKey,
+    text: args.text,
+    row: args.row,
+    provider: args.provider,
+    model: args.model,
+    effort: args.effort,
+    mode: args.mode,
+    mentions: args.mentions,
+    queuedAt: Date.now(),
+    titleText: args.titleText,
+    rowOnly: args.rowOnly,
+  };
+  if (args.buildPrompt) promptBuilders.set(send.id, args.buildPrompt);
+  return send;
+}
+
+/**
+ * After a relaunch mid-warm-up: the VM is empty, so re-render the queued
+ * bubbles. Only when the conversation truly has nothing — a live VM already
+ * shows them. Re-stamped with the acting user for the same reason as the
+ * original push: the queue is this account's own, and the flush's send will
+ * suppress the bubble that would otherwise carry the name.
+ */
+export function restoreWarmingBubbles(entry: ProvisioningEntry): void {
+  const author = actingUser();
+  for (const send of entry.pendingSends ?? []) {
+    if (send.rowOnly) continue;
+    if (getConversationFeed(entry.agentPath, send.sessionKey).length === 0) {
+      pushPendingUserMessage(
+        entry.agentPath,
+        send.sessionKey,
+        send.text,
+        author,
+        send.mentions,
+      );
+    }
+  }
+}
+
+/**
+ * The engine answered: fire the queued sends, in order. Each send resolves as
+ * soon as its turn stream is registered (the adapter holds follow-ups behind
+ * a running turn on its own). A failed send surfaces via the tauri wrapper's
+ * toast; the remaining sends still go out. Index-drained so a message queued
+ * mid-flush (the entry is live until the caller clears it) is delivered too;
+ * once the flush starts, `isFlushingWarmingSends` steers new sends to the
+ * normal wire path instead.
+ */
+export async function flushWarmingSends(
+  entry: ProvisioningEntry,
+): Promise<void> {
+  flushing.add(entry);
+  for (let i = 0; ; i++) {
+    const send = entry.pendingSends?.[i];
+    if (!send) break;
+    const build = promptBuilders.get(send.id);
+    promptBuilders.delete(send.id);
+    let prompt = send.text;
+    if (build) {
+      try {
+        prompt = await build();
+      } catch (e) {
+        // The attachment save failed (already toasted by its own wrapper) —
+        // deliver the words rather than dropping the message with the files.
+        logger.error(`[warming-sends] prompt build failed: ${e}`);
+      }
+    }
+    // The conversation's board row lands here, not at send time: the engine
+    // is awake now, and the id-upsert makes a retry of an already-landed row
+    // a no-op. A failure loses only the card — the message still delivers.
+    let rowId: string | null = null;
+    if (send.row) {
+      try {
+        // `status` settles via the patch below — the create route can't
+        // carry it, and its zod may reject unknown keys.
+        const { status: rowStatus, ...createInput } = send.row;
+        const created = await tauriActivity.createWithId(
+          entry.agentPath,
+          createInput,
+        );
+        rowId = created.id;
+        // One patch for whatever the create couldn't carry: a non-standard
+        // session key — a `welcome-` chat, or version skew where an engine
+        // predating client-supplied ids (HOU-693) assigned its own id — so
+        // the board card still opens THIS conversation and the turn's status
+        // writes still resolve (both match session_key first); plus a status
+        // settled while queued (the welcome card's needs_you).
+        const patch: { session_key?: string; status?: ActivityStatus } = {};
+        if (send.sessionKey !== `activity-${created.id}`) {
+          patch.session_key = send.sessionKey;
+        }
+        if (rowStatus && rowStatus !== created.status) {
+          patch.status = rowStatus;
+        }
+        if (Object.keys(patch).length > 0) {
+          await getEngine().updateActivity(entry.agentPath, created.id, patch);
+        }
+      } catch (e) {
+        // The agent vanished between the readiness probe and this write
+        // (deleted/unshared elsewhere, TILINX-APP-4ZF): every remaining send
+        // is doomed to the same "agent not found" 404. Abort the flush and
+        // heal the roster instead of toasting a state the user can't act on
+        // — the probe's own gone-check catches this before the flush ever
+        // starts; this guards the in-flight race.
+        if (isAgentGoneError(e)) {
+          logger.warn(`[warming-sends] agent gone mid-flush, aborting: ${e}`);
+          healStaleRosterFromError(e);
+          return;
+        }
+        showErrorToast(
+          "warming_sends_row",
+          "mission row create/update failed",
+          undefined,
+          { userMessage: i18n.t("chat:errors.missionRowFailed") },
+        );
+      }
+    }
+    // Row-only entry (the welcome mission): the row IS the payload.
+    if (send.rowOnly) continue;
+    const activityId =
+      rowId ??
+      (send.sessionKey.startsWith("activity-")
+        ? send.sessionKey.slice("activity-".length)
+        : undefined);
+    // A parked follow-up (no row of its own) carries the composer's guess at
+    // the mission's pin — the pod answers now, so read the row's stored pin
+    // before verifying it (PRODUCT-1643). A failed read keeps the guess: the
+    // wrapper already reported it, and the message still delivers.
+    let rowPin: RowPin | undefined;
+    if (!send.row) {
+      try {
+        rowPin = (await tauriActivity.list(entry.agentPath)).find(
+          (a) =>
+            (a.session_key ?? `activity-${a.id}`) === send.sessionKey ||
+            a.id === activityId,
+        );
+      } catch (e) {
+        logger.warn(`[warming-sends] mission pin read failed: ${e}`);
+      }
+    }
+    const pin = await verifyWarmingSendPin({
+      agentId: entry.agentPath,
+      activityId,
+      pin: preferRowPin(rowPin, {
+        provider: send.provider,
+        model: send.model,
+        effort: send.effort,
+      }),
+      probe: async (agentId, provider) => {
+        const statuses = await tauriProvider.checkAllStatusesForAgent(agentId, [
+          provider,
+        ]);
+        return statuses[provider]?.authenticated === true;
+      },
+      clearActivityPin: async (agentId, id) => {
+        try {
+          await tauriActivity.update(agentId, id, {
+            provider: null,
+            model: null,
+          });
+        } catch (error) {
+          logger.error(`[warming-sends] activity pin clear failed: ${error}`);
+        }
+      },
+    });
+    // The bubble is already on screen (pushed at queue time, or restored on
+    // rehydrate) — never double it. If the scope is somehow empty (renamed
+    // agent moved the VM scope), let the turn push it.
+    const suppress = getConversationFeed(entry.agentPath, send.sessionKey).some(
+      (f) => f.feed_type === "user_message",
+    );
+    try {
+      await tauriChat.send(entry.agentPath, prompt, send.sessionKey, {
+        providerOverride: pin.provider,
+        modelOverride: pin.model,
+        effortOverride: pin.effort,
+        modeOverride: send.mode,
+        mentions: send.mentions,
+        suppressUserBubble: suppress,
+        // A prompt builder rewrote the wire prompt (a hidden setup directive /
+        // attachment paths) — persist the clean `send.text` as the bubble so a
+        // history reload shows what the user saw, not the real prompt. When no
+        // builder ran, prompt === send.text and there is nothing to hide.
+        displayText: build ? send.text : undefined,
+      });
+      // The AI title pass this mission skipped at queue time (HOU-713): the
+      // row just landed and the engine answers now. Fire-and-forget — a
+      // failure keeps the fallback title (refreshMissionTitle logs it).
+      if (rowId && send.titleText) {
+        void refreshMissionTitle({
+          agentPath: entry.agentPath,
+          activityId: rowId,
+          text: send.titleText,
+          provider: pin.provider,
+          model: pin.model,
+        });
+      }
+    } catch (e) {
+      // Same in-flight race as the row create above: an agent-gone refusal
+      // dooms every remaining send, so stop instead of hammering 404s.
+      if (isAgentGoneError(e)) {
+        logger.warn(`[warming-sends] agent gone mid-flush, aborting: ${e}`);
+        healStaleRosterFromError(e);
+        return;
+      }
+      // tauriChat.send already toasted the real reason; keep flushing the
+      // rest — one refused turn must not strand the queue.
+      logger.error(`[warming-sends] deferred send failed: ${e}`);
+    }
+  }
+}

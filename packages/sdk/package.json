@@ -1,0 +1,61 @@
+{
+  "name": "@tilinx/sdk",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "module": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./react": {
+      "types": "./src/react/index.ts",
+      "import": "./src/react/index.ts"
+    },
+    "./agent-name": {
+      "types": "./src/agent-name.ts",
+      "import": "./src/agent-name.ts"
+    },
+    "./provider-catalog": {
+      "types": "./src/provider-catalog.ts",
+      "import": "./src/provider-catalog.ts"
+    },
+    "./local-model-bridge/unsupported": {
+      "types": "./src/local-model-bridge/unsupported.ts",
+      "import": "./src/local-model-bridge/unsupported.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "build": "tsgo -p tsconfig.json",
+    "build:bridge": "node scripts/build-bridge.mjs",
+    "dev": "tsgo -p tsconfig.json --watch",
+    "test": "vitest run --testTimeout=30000",
+    "typecheck": "tsgo -p tsconfig.json --noEmit"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tilinx/fake-host": "workspace:*",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@typescript/native-preview": "7.0.0-dev.20260607.1",
+    "esbuild": "0.25.12",
+    "jsdom": "29.1.1",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "typescript": "6.0.3",
+    "vitest": "3.2.6"
+  },
+  "dependencies": {
+    "@tilinx/domain": "workspace:*",
+    "@tilinx/protocol": "workspace:*",
+    "@tilinx/runtime-client": "workspace:*"
+  }
+}

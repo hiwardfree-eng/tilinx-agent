@@ -1,0 +1,491 @@
+@import "tailwindcss";
+
+/* Semantic colour tokens: --ht-* on :root (light) and [data-theme="dark"].
+   SINGLE SOURCE OF TRUTH is @tilinx/design-tokens (tokens/*.json compiled to
+   this CSS). Never edit token values here — edit the JSON and rebuild
+   (`pnpm --filter @tilinx/design-tokens build`). The `@theme inline` block
+   below re-exports these to Tailwind's --color-* utilities. */
+@import "@tilinx/design-tokens/css";
+
+/* The app toggles dark mode via data-theme="dark" on <html> (see
+   app/src/lib/theme.ts) — NOT a .dark class. The variant must key on the
+   attribute or every `dark:` utility silently never applies.
+
+   A subtree can pin itself to the light theme with data-theme="light" (the
+   tokens ship a matching [data-theme="light"] scope) — the :not() keeps
+   `dark:` utilities from leaking into such a subtree via the <html> ancestor.
+   Exact today because theme.ts only ever puts "dark" on <html> and "light"
+   only ever appears on pinned subtrees. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *):not(:where([data-theme="light"], [data-theme="light"] *)));
+
+/* Dark mode needs the native form controls / scrollbars to follow suit; the
+   colour values themselves come from the imported tokens above. A light-pinned
+   subtree flips them back. */
+[data-theme="dark"] {
+  color-scheme: dark;
+}
+[data-theme="light"] {
+  color-scheme: light;
+}
+
+/* The ONE responsive boundary: unprefixed utilities are the phone layer, `md:`
+   is the desktop layer — there is no other tier. Declared explicitly (Tailwind
+   v4's default md is the same 768px) because a media query cannot read a var():
+   the value must be spelled here, so the breakpoint token
+   (packages/design-tokens tokens/scale/breakpoint.json — what useIsMobile()
+   reads) is pinned to this declaration by ui/core/tests/breakpoint-sync.test.ts.
+   Change the token and this line together, or that test fails. */
+@theme {
+  --breakpoint-md: 768px;
+}
+
+/* Safe-area insets (notch / home indicator), for FIXED top/bottom chrome on
+   phones — e.g. a bottom tab bar pads itself with pb-safe so the home
+   indicator never covers its targets. env() resolves to 0 on desktop and any
+   un-notched phone, so these are inert everywhere else; an element that also
+   needs design padding stacks it via calc, e.g.
+   pb-[calc(env(safe-area-inset-bottom)+theme(spacing.2))]. Requires
+   viewport-fit=cover on the viewport meta (app/index.html +
+   packages/web/index.html) or every env() resolves to 0. */
+@utility pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+@utility pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@utility pl-safe {
+  padding-left: env(safe-area-inset-left, 0px);
+}
+@utility pr-safe {
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* Corner radius. Kept as a PLAIN :root var (not a @theme token) so the four
+   direct `var(--radius)` consumers (input-group.tsx, sonner.tsx) keep resolving:
+   `@theme inline` below inlines every var it owns into the utilities and emits
+   NOTHING to :root, so a radius living inside it would vanish from the cascade. */
+:root {
+  --radius: 0.5rem;
+}
+
+/* `@theme inline` (NOT plain `@theme`) is load-bearing for subtree theme pinning.
+   With plain `@theme`, Tailwind emits `--color-*: var(--ht-*)` on :root and each
+   utility reads `var(--color-*)`; per the css-variables spec the inner var()
+   substitutes at the DECLARING element (:root), so every colour resolves ONCE
+   from the root's --ht-* and merely inherits down — a mid-tree [data-theme] pin
+   redeclares --ht-* but no utility re-reads it, so the pin is inert (the bug the
+   sign-in card hit). `inline` makes Tailwind emit the utility as
+   `background-color: var(--ht-input)` directly — resolved at the CONSUMING
+   element — so a pinned subtree re-resolves every colour. Trade-off: `inline`
+   drops the :root --color-* emission entirely, so nothing may read
+   `var(--color-*)` directly; all direct consumers reference `var(--ht-*)`. */
+@theme inline {
+  --color-input: var(--ht-input);
+  --color-ink: var(--ht-ink);
+  /* The standard main-canvas surface: the light gray the content panes float
+     cards on (dark = the frosted "screen" glass). Backs the Arc `.canvas-screen`
+     panes; `bg-background` lets any surface that lives ON the canvas (e.g. the chat
+     panel) reference the SAME tone as one source of truth.
+     Named `gutter`, NEVER `base`: a `base` color makes Tailwind emit
+     `text-base` as a COLOR utility, shadowing the standard 16px font-size
+     utility and painting every `text-base` heading background-colored
+     (invisible on a matching surface, both themes). */
+  --color-gutter: var(--ht-base);
+  --color-background: var(--ht-background);
+  --color-card: var(--ht-card);
+  --color-card-hover: var(--ht-card-hover);
+  --color-card-text: var(--ht-card-text);
+  --color-dialog: var(--ht-dialog);
+  --color-popover: var(--ht-popover);
+  --color-popover-text: var(--ht-popover-text);
+  --color-action: var(--ht-action);
+  --color-action-text: var(--ht-action-text);
+  --color-link: var(--ht-link);
+  --color-chip: var(--ht-chip);
+  --color-chip-solid: var(--ht-chip-solid);
+  --color-chip-solid-hover: var(--ht-chip-solid-hover);
+  --color-chip-text: var(--ht-chip-text);
+  --color-chip-subtle: var(--ht-chip-subtle);
+  --color-tab-track: var(--ht-tab-track);
+  --color-tab-active: var(--ht-tab-active);
+  /* The user chat bubble's text: pure white in BOTH themes (PRODUCT-1217) —
+     the near-white grays (input / ink) read dull over the bubble fill. */
+  --color-bubble-text: var(--ht-bubble-text);
+  /* The AGENT's long-form chat prose (PRODUCT-1217). Identical to `ink` in
+     light; in dark it steps up to pure white, where `ink`'s #e5e5e5 reads
+     dim beside the user bubble. Scoped to chat so the app's primary text
+     (sidebar, board, settings) keeps the softer reading gray. */
+  --color-prose-text: var(--ht-prose-text);
+  --color-ink-muted: var(--ht-ink-muted);
+  --color-hover: var(--ht-hover);
+  --color-hover-text: var(--ht-hover-text);
+  --color-danger: var(--ht-danger);
+  --color-danger-text: var(--ht-danger-text);
+  --color-line: var(--ht-line);
+  --color-line-input: var(--ht-line-input);
+  --color-focus: var(--ht-focus);
+  --color-sidebar: var(--ht-sidebar);
+  --color-sidebar-text: var(--ht-sidebar-text);
+  --color-sidebar-line: var(--ht-sidebar-line);
+  --color-sidebar-hover: var(--ht-sidebar-hover);
+  --color-sidebar-hover-text: var(--ht-sidebar-hover-text);
+  --color-sidebar-active: var(--ht-sidebar-active);
+  --color-success: var(--ht-success);
+  --color-success-text: var(--ht-success-text);
+  --color-warning: var(--ht-warning);
+  --color-warning-text: var(--ht-warning-text);
+  --color-highlight: var(--ht-highlight);
+  --color-highlight-text: var(--ht-highlight-text);
+  /* Agent palette, bridged for TEXT only: an agent's NAME line in chat is painted
+     with a `text-agent-*` utility, which needs a real Tailwind colour. Agent
+     AVATARS still bypass these — `resolveAgentColor` maps a stored id to an
+     inline var(--ht-agent-*), because a fill is chosen at runtime from data, not
+     from a class the markup can spell. Same token either way, two delivery paths. */
+  --color-agent-charcoal: var(--ht-agent-charcoal);
+  --color-agent-forest: var(--ht-agent-forest);
+  --color-agent-navy: var(--ht-agent-navy);
+  --color-agent-purple: var(--ht-agent-purple);
+  --color-agent-crimson: var(--ht-agent-crimson);
+  --color-agent-orange: var(--ht-agent-orange);
+  --color-agent-golden: var(--ht-agent-golden);
+  --color-agent-teal: var(--ht-agent-teal);
+  --color-agent-rose: var(--ht-agent-rose);
+  --color-agent-umber: var(--ht-agent-umber);
+  /* File-type identity palette: the ten families a file icon can belong to, one
+     muted hue each, themed for both canvases. Identity colour like an agent's
+     helmet, never status — the Files list paints the glyph inside its outlined
+     tile with a `text-filetype-*` utility so a PDF reads as a PDF at a glance.
+     Folders stay monochrome (`text-ink-muted`): a folder is not a file type. */
+  --color-filetype-pdf: var(--ht-filetype-pdf);
+  --color-filetype-doc: var(--ht-filetype-doc);
+  --color-filetype-sheet: var(--ht-filetype-sheet);
+  --color-filetype-slide: var(--ht-filetype-slide);
+  --color-filetype-image: var(--ht-filetype-image);
+  --color-filetype-video: var(--ht-filetype-video);
+  --color-filetype-audio: var(--ht-filetype-audio);
+  --color-filetype-archive: var(--ht-filetype-archive);
+  --color-filetype-code: var(--ht-filetype-code);
+  --color-filetype-generic: var(--ht-filetype-generic);
+  /* Human (not agent) avatar palette: five deliberately DESATURATED tones so a
+     teammate's face never competes with the vivid agent helmets, plus the
+     initials colour they carry and the solid fill/text pair the "+N" overflow
+     chip wears. Bridged as utilities because the face stack picks a tone by
+     className, deterministically from the person's id. */
+  --color-person-slate: var(--ht-person-slate);
+  --color-person-sage: var(--ht-person-sage);
+  --color-person-mauve: var(--ht-person-mauve);
+  --color-person-taupe: var(--ht-person-taupe);
+  --color-person-indigo: var(--ht-person-indigo);
+  /* The SAME five tones retuned for the teammate's NAME inside a chat bubble.
+     The fills above were tuned to carry white initials, so as text they land at
+     2.9-3.1:1 on the dark bubble — below the 4.5:1 body-text floor. These pair a
+     darker light-mode tone with a lighter dark-mode one, keeping each person's
+     hue identity while clearing 4.5:1 on the composited bubble surface.
+     Guarded by packages/design-tokens/test/contrast.test.ts. */
+  --color-person-name-slate: var(--ht-person-name-slate);
+  --color-person-name-sage: var(--ht-person-name-sage);
+  --color-person-name-mauve: var(--ht-person-name-mauve);
+  --color-person-name-taupe: var(--ht-person-name-taupe);
+  --color-person-name-indigo: var(--ht-person-name-indigo);
+  --color-person-initials: var(--ht-person-initials);
+  --color-person-overflow: var(--ht-person-overflow);
+  --color-person-overflow-text: var(--ht-person-overflow-text);
+  --animate-caret-blink: caret-blink 1.2s ease-out infinite;
+}
+
+/* Fake caret blink inside the OTP input's active slot (`input-otp` hides the
+   real input and renders its caret as a DOM node). */
+@keyframes caret-blink {
+  0%, 70%, 100% { opacity: 1; }
+  20%, 50% { opacity: 0; }
+}
+
+@layer base {
+  * {
+    border-color: var(--ht-line);
+  }
+}
+
+/* TilinX's interface weight: 510, the notch just past medium.
+ *
+ * Linear's whole UI sits in a 400-510 band and its rails are set at 510 — far
+ * enough over regular that a 13px label holds its own against the canvas,
+ * nowhere near the semibold that makes a list read as a stack of headings. We
+ * want that exact colour of text, so this is the one place it is spelled.
+ *
+ * It is TWO declarations on purpose, because TilinX ships no webfont — the
+ * family is the platform's (`ui-sans-serif, -apple-system, system-ui,
+ * "Segoe UI", …`), and half the platforms resolve it to a variable font and
+ * half to a static one:
+ *
+ * - `font-variation-settings` is what actually delivers 510. On macOS the
+ *   stack resolves to SF Pro, a VARIABLE face with a `wght` axis, so the axis
+ *   is set literally and the text renders at 510 exactly.
+ * - `font-weight: 500` is the face-selection anchor for everything else, and
+ *   it is the declaration that makes this safe. Writing `font-weight: 510`
+ *   alone would be a trap on Windows: Segoe UI ships STATIC faces with no 500,
+ *   and the CSS font-matching rule for a target above 500 searches UPWARD
+ *   first — so 510 would select Semibold (600) and every row in the rail would
+ *   come out heavy. Anchoring at 500 keeps the match inside the 400-500 band,
+ *   so a static family lands on its nearest face instead of overshooting, and
+ *   `font-variation-settings` is simply ignored by a font with no axes.
+ *
+ * Net: exactly 510 where the platform font is variable, the nearest weight at
+ * or under medium where it is not, and never a semibold rail anywhere. */
+@utility font-weight-510 {
+  font-weight: 500;
+  font-variation-settings: "wght" 510;
+}
+
+button,
+[role="button"],
+a,
+summary,
+[onclick] {
+  cursor: pointer;
+}
+
+/* Keep textarea caret proportional to text, not line-height */
+textarea {
+  caret-shape: bar;
+  font-variant-ligatures: none;
+}
+
+/* Kanban card drag cursor (pointer-events based — see @tilinx-ai/board's
+   use-board-drag). Native HTML5 drag lets each OS pick the drag cursor; the
+   board runs the drag itself, so we force ONE cursor across macOS, Windows and
+   Linux here. The `!important` universal selector beats every element's own
+   cursor (cards rest on `pointer`). `user-select` is killed so a drag never
+   paints a text selection. The forbidden rule (running section) uses two
+   classes, so it outranks the grab rule by specificity regardless of order. */
+body.kanban-dragging,
+body.kanban-dragging * {
+  cursor: grabbing !important;
+}
+body.kanban-dragging {
+  user-select: none;
+  -webkit-user-select: none;
+}
+body.kanban-dragging.kanban-dragging-forbidden,
+body.kanban-dragging.kanban-dragging-forbidden * {
+  cursor: not-allowed !important;
+}
+
+body {
+  background-color: var(--ht-input);
+  color: var(--ht-ink);
+  font-family:
+    ui-sans-serif, -apple-system, "system-ui", "Segoe UI", Helvetica,
+    "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+  margin: 0;
+}
+
+/* Running card glow border — light traces around the edge */
+@property --glow-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes glow-spin {
+  to {
+    --glow-angle: 360deg;
+  }
+}
+
+.card-running-glow {
+  --glow-angle: 0deg;
+  --glow-bg: var(--ht-input, #ffffff);
+  position: relative;
+  background:
+    linear-gradient(var(--glow-bg), var(--glow-bg)) padding-box,
+    conic-gradient(
+      from var(--glow-angle),
+      transparent 60%,
+      rgba(59, 130, 246, 0.15) 68%,
+      #3b82f6 74%,
+      #818cf8 78%,
+      #f97316 82%,
+      #fbbf24 84%,
+      transparent 88%
+    ) border-box;
+  border: 1.5px solid transparent;
+  animation: glow-spin 2.5s linear infinite;
+}
+
+/* Same comet trace as .card-running-glow, but masked to the ring only.
+ * .card-running-glow hides the conic's interior behind an opaque
+ * --glow-bg fill, so on a transparent/translucent surface (the glass
+ * sidebar) the sweep leaks into the middle and reads as a radar dish.
+ * This variant needs no backdrop: the mask keeps just the 1.5px line. */
+.avatar-running-ring {
+  --glow-angle: 0deg;
+  position: relative;
+}
+
+.avatar-running-ring::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.5px;
+  background: conic-gradient(
+    from var(--glow-angle),
+    transparent 60%,
+    rgba(59, 130, 246, 0.15) 68%,
+    #3b82f6 74%,
+    #818cf8 78%,
+    #f97316 82%,
+    #fbbf24 84%,
+    transparent 88%
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  animation: glow-spin 2.5s linear infinite;
+  pointer-events: none;
+}
+
+
+/* Indeterminate progress line — the same comet palette as
+ * .card-running-glow, flattened into a thin bar for sections that wait on
+ * one finite operation (e.g. the export wizard's anonymize pass). Give the
+ * element a track color yourself (e.g. `bg-ink/5`); the comet sweeps
+ * left to right on the glow's 2.5s clock. */
+@keyframes glow-line-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    /* -100% start + 250% (track/self width) travel + 100% exit */
+    transform: translateX(350%);
+  }
+}
+
+.running-glow-line {
+  position: relative;
+  height: 2px;
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.running-glow-line::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(59, 130, 246, 0.15),
+    #3b82f6,
+    #818cf8,
+    #f97316,
+    #fbbf24,
+    transparent
+  );
+  animation: glow-line-sweep 2.5s linear infinite;
+}
+
+/* Typing dots — WhatsApp-style "•••" bouncing while an agent is
+ * working. Apply `.typing-dot` to three sibling elements; the
+ * `nth-child` rules stagger them so the bounce travels across. */
+@keyframes typing-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.35; }
+  30% { transform: translateY(-3px); opacity: 1; }
+}
+
+.typing-dot {
+  animation: typing-bounce 1.2s ease-in-out infinite both;
+}
+.typing-dot:nth-child(1) { animation-delay: 0s; }
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+
+/* Pulsing dot for active tool */
+@keyframes tool-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.tool-active-dot {
+  animation: tool-pulse 1s ease-in-out infinite;
+}
+
+/* The Files list's selection bar taking the column header's slot the instant a
+   file is checked. Entrance only, transform + opacity only, 200ms on the
+   entrance curve — a swap this small must be noticed, never waited for. */
+@keyframes files-selection-bar-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.files-selection-bar-in {
+  animation: files-selection-bar-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .files-selection-bar-in { animation: none; }
+}
+
+/* The Files loading skeleton's entrance, once its 150ms mount delay (see
+   files-skeleton.tsx) has decided a read is genuinely slow: opacity only, no
+   base opacity and no fill-mode, so reduced-motion (or any dropped animation)
+   still lands on a fully visible skeleton. */
+@keyframes files-skeleton-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.files-skeleton-in {
+  animation: files-skeleton-in 150ms linear;
+}
+@media (prefers-reduced-motion: reduce) {
+  .files-skeleton-in { animation: none; }
+}
+
+/* A sidebar disclosure opening: the "Your teams" section, and every team block
+   under it. Entrance only, transform + opacity only, 200ms on the entrance
+   curve — the rail must feel like it unfolded, never like it waited.
+
+   Deliberately NOT a height animation: height is layout, and DESIGN.md allows
+   only transform + opacity per frame. The closing direction carries no
+   animation at all, which is both the honest reading of "exits faster than
+   entrances" and what keeps a collapsed team's drop target from lingering
+   mounted-but-invisible under the cursor. */
+@keyframes sidebar-disclosure-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+.sidebar-disclosure-in {
+  animation: sidebar-disclosure-in 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-disclosure-in { animation: none; }
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ht-ink) 15%, transparent);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ht-ink) 30%, transparent);
+}
