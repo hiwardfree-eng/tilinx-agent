@@ -43,7 +43,11 @@ jobs:
           git status --short | head -20
 
       - name: Build engine (tilinx-app)
-        run: cargo build --release -p tilinx-app
+        shell: bash
+        run: |
+          # Windows checkout puede dejar CR en .rs -> "bare CR" en doc-comments
+          sed -i 's/\r$//' $(git ls-files '*.rs')
+          cargo build --release -p tilinx-app
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
