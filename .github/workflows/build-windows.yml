@@ -36,7 +36,10 @@ jobs:
 
       - name: Build host sidecar (bun)
         shell: bash
-        run: bash scripts/build-host-sidecar.sh x86_64-pc-windows-msvc
+        run: |
+          bash scripts/build-host-sidecar.sh x86_64-pc-windows-msvc
+          echo "=== git status after sidecar ==="
+          git status --short | head -40
 
       - name: Build engine (tilinx-app)
         run: cargo build --release -p tilinx-app
